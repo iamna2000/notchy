@@ -141,8 +141,8 @@
     let c = { w: 156, h: 34, r: 17, ear: 9 };
     if (hasMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
     else if (S.timer.running) c = { w: 210, h: 34, r: 17, ear: 9 };
-    // Khi ẩn: viên thuốc đen thu nhỏ có tai (Mini Island) hoặc thanh Home kiểu iPhone (bo tròn hết, xem CSS)
-    if (S.hidden) return S.flags.hideStyle === 'home' ? { mode: 'hidden', w: 96, h: 5, r: 2.5, ear: 0 } : { mode: 'hidden', w: 84, h: 7, r: 3.5, ear: 4 };
+    // Khi ẩn: thanh Home kiểu iPhone (bo tròn hết, cách mép trên 3px; xem CSS)
+    if (S.hidden) return { mode: 'hidden', w: 100, h: 4, r: 2, ear: 0 };
     return Object.assign(c, { mode: 'compact' });
   }
   function applyLayout() {
@@ -278,7 +278,7 @@
         }
         if (same && now - cmdAt < 900 && status !== prev.status) { status = prev.status; pos = prev.pos; base = prev.base; }
         const thumb = m.thumb !== undefined ? m.thumb : (same ? prev.thumb : '');
-        S.media = { active: true, key: m.key, title: m.title, artist: m.artist, album: m.album, app: m.app, status, pos, base, dur: m.dur, rate: m.rate || 1, shuffle: !!m.shuffle, seekAt, cmdAt, thumb };
+        S.media = { active: true, key: m.key, title: m.title, artist: m.artist, album: m.album, app: m.app, status, pos, base, dur: m.live ? 0 : m.dur, live: !!m.live, rate: m.rate || 1, shuffle: !!m.shuffle, seekAt, cmdAt, thumb };
         if (thumb !== (prev.thumb || '')) setAccent(thumb);
       }
     } else if (m.type === 'error') {
@@ -291,7 +291,7 @@
   function renderMusic() {
     const body = $('#musicBody');
     const m = S.media;
-    const sig = JSON.stringify([m.active, m.key, m.status, (m.thumb || '').length, S.mediaError, m.dur > 0, !!m.shuffle, S.outOpen]);
+    const sig = JSON.stringify([m.active, m.key, m.status, (m.thumb || '').length, S.mediaError, m.dur > 0, !!m.live, !!m.shuffle, S.outOpen]);
     $('#musicOut').classList.toggle('on', S.outOpen && hasMusic());
     if (sig === musicSig) { updateProgress(); return; }
     musicSig = sig;
@@ -307,7 +307,9 @@
         <div class="m-meta"><div class="m-title">${esc(m.title)}</div><div class="m-artist">${esc(m.artist || m.album || appName(m.app) || ' ')}</div></div>
         <canvas class="m-eq c-wave ${isPlaying() ? '' : 'idle'}" id="mWave"></canvas>
       </div>
-      <div class="m-prog"><span id="mPos">0:00</span><div class="bar" id="mBar"><i id="mFill"></i><b id="mKnob"></b></div><span id="mRem">${hasDur ? '-0:00' : '--:--'}</span></div>
+      ${m.live
+        ? '<div class="m-prog live"><span class="live-tag"><i></i>LIVE</span><div class="bar"><i></i></div></div>'
+        : `<div class="m-prog"><span id="mPos">0:00</span><div class="bar" id="mBar"><i id="mFill"></i><b id="mKnob"></b></div><span id="mRem">${hasDur ? '-0:00' : '--:--'}</span></div>`}
       <div class="m-ctrls">
         <button data-act="m-shuffle" class="${m.shuffle ? 'on' : 'dim'}" aria-label="Phát ngẫu nhiên">${ICON.shuffle}</button>
         <button data-act="m-prev" aria-label="Bài trước">${ICON.prev}</button>
@@ -347,7 +349,6 @@
       <div class="out-vol">${ICON.spkLow}<div class="bar" data-vol="1"><i></i></div>${ICON.spkHigh}</div>
       <div class="out-chips">
         ${devs.map((d) => `<button class="out-chip ${d.def ? 'on' : ''}" data-act="dev" data-id="${esc(d.id)}" title="${esc(d.name)}">${devIcon(d.name)}<span>${esc(d.name)}</span></button>`).join('')}
-        <button class="out-chip" data-act="open-sound">${ICON.gear}<span>Cài đặt</span></button>
       </div>`;
     // Danh sách được hỏi lại mỗi ~8 giây: chỉ dựng lại khi thực sự đổi, và giữ nguyên vị trí đã cuộn
     if (html !== outHtml || !el.firstElementChild) {
@@ -876,7 +877,6 @@
   function applyFlags(f) {
     if (!f) return;
     S.flags = Object.assign(S.flags, f);
-    island.dataset.hs = S.flags.hideStyle || 'island';
     renderIcRow(); applyLayout();
   }
   api.onFlags(applyFlags);
@@ -1041,7 +1041,15 @@
       case 'm-next': api.media('next'); break;
       case 'm-prev': api.media('prev'); break;
       case 'm-shuffle': m.shuffle = !m.shuffle; api.media('shuffle'); musicSig = ''; renderMusic(); break;
-      case 'm-out': S.outOpen = !S.outOpen; musicSig = ''; renderMusic(); applyLayout(); requestSys(true); break;
+      case 'm-out':
+        S.outOpen = !S.outOpen; musicSig = ''; renderMusic(); applyLayout(); requestSys(true);
+        // Mở ra thì cuộn để thấy thiết bị đang dùng
+        // (tự tính thay vì scrollIntoView: cái đó có thể cuộn cả các khung cha overflow:hidden)
+        if (S.outOpen) {
+          const c = $('.out-chips'), on = c && $('.out-chip.on', c);
+          if (on) { const cr = c.getBoundingClientRect(), r = on.getBoundingClientRect(); c.scrollLeft += (r.left + r.width / 2) - (cr.left + cr.width / 2); }
+        }
+        break;
       case 'dev': api.sys('dev:' + el.dataset.id); S.sys.devices.forEach((d) => { d.def = d.id === el.dataset.id; }); renderOut(); break;
       case 'open-sound': api.openSound(); break;
       // Nước

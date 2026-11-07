@@ -336,6 +336,8 @@ while (-not $quit) {
             upd     = $upd
             rate    = $rate
             shuffle = $shuf
+            # Livestream (YouTube live tren trinh duyet...): Chromium bao thoi luong vo han -> EndTime am
+            live    = (($tl.EndTime - $tl.StartTime).Ticks -lt 0)
           }
           if ($key -ne $lastKey) {
             $lastKey = $key

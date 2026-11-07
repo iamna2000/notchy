@@ -55,8 +55,6 @@ const IDLE_CHOICES = [0, 5, 10, 30];
 const idleHideSec = () => { const v = Number(loadSettings().idleHide); return IDLE_CHOICES.includes(v) ? v : 0; };
 let idleSec = 0;        // đọc 1 lần từ cài đặt, cập nhật khi đổi trong menu (pollCursor chạy 20 lần/giây)
 let lastUse = Date.now();
-// Kiểu khi ẩn: 'island' (viên thuốc đen thu nhỏ) hoặc 'home' (thanh Home kiểu iPhone)
-const hideStyle = () => (loadSettings().hideStyle === 'home' ? 'home' : 'island');
 
 // ---------- Chỉ cho chạy một bản ----------
 const gotLock = app.requestSingleInstanceLock();
@@ -331,7 +329,7 @@ function readDnd() {
     sendFlags();
   });
 }
-const flags = () => ({ dnd: dndOn, awake: awakeId !== null, hideStyle: hideStyle() });
+const flags = () => ({ dnd: dndOn, awake: awakeId !== null });
 const sendFlags = () => send('flags', flags());
 
 // ---------- Khay hệ thống ----------
@@ -362,10 +360,6 @@ function buildMenu() {
     { label: 'Tự ẩn khi không dùng', submenu: IDLE_CHOICES.map((v) => ({
       label: v ? `Sau ${v} giây` : 'Tắt', type: 'radio', checked: idleSec === v,
       click: () => { const s = loadSettings(); s.idleHide = v; saveSettings(s); idleSec = v; lastUse = Date.now(); refreshTrayMenu(); },
-    })) },
-    { label: 'Kiểu khi ẩn', submenu: [['island', 'Mini Island'], ['home', 'Thanh Home (kiểu iPhone)']].map(([v, label]) => ({
-      label, type: 'radio', checked: hideStyle() === v,
-      click: () => { const s = loadSettings(); s.hideStyle = v; saveSettings(s); sendFlags(); refreshTrayMenu(); },
     })) },
     { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
     { label: 'Mở thư mục nhật ký lỗi', click: () => shell.showItemInFolder(path.join(userDir(), 'log.txt')) },

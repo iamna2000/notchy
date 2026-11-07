@@ -36,18 +36,13 @@ input::placeholder { color: var(--label3); }
 }
 .island[data-mode="open"], .island[data-mode="ring"] { box-shadow: 0 18px 40px rgba(0, 0, 0, .45); }
 .island[data-mode="notice"] { box-shadow: 0 12px 28px rgba(0, 0, 0, .4); }
-/* Tự ẩn: trượt lên khỏi mép màn hình, trả lại toàn bộ thanh tab của trình duyệt */
+/* Tự ẩn: thu thành thanh Home kiểu iPhone (mỏng 4px, bo tròn hết, cách mép trên 3px), trả lại thanh tab
+   của trình duyệt. Xám trung tính + viền tối rất mảnh để thấy được trên cả nền sáng lẫn tối;
+   đang phát nhạc thì nhuộm màu ảnh bìa */
 .shell { transition: background-color .35s ease; }
-.shell::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 2px; margin: -1px 0 0 -11px; border-radius: 1px; background: var(--wave, #c9b8ff); box-shadow: 0 0 6px var(--wave, #c9b8ff); opacity: 0; transition: opacity .4s ease; pointer-events: none; }
-/* Kiểu "Mini Island": khối đen thu nhỏ có tai, viền sáng mảnh ở cạnh dưới + bóng mềm;
-   đang phát nhạc thì có vệt sáng màu ảnh bìa ở giữa */
-.island[data-mode="hidden"][data-hs="island"] { box-shadow: 0 .5px 0 rgba(255, 255, 255, .1), 0 3px 10px rgba(0, 0, 0, .35); }
-.island[data-mode="hidden"][data-hs="island"].playing .shell::after { opacity: 1; transition-delay: .25s; }
-/* Kiểu "Thanh Home": thanh bo tròn xám sáng cách mép trên 3px, viền tối rất mảnh để thấy được trên cả
-   nền sáng lẫn tối; đang phát nhạc thì nhuộm màu ảnh bìa */
-.island[data-mode="hidden"][data-hs="home"] { border-radius: 2.5px !important; transform: translateY(3px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .35), 0 1px 4px rgba(0, 0, 0, .25); }
-.island[data-mode="hidden"][data-hs="home"] .shell { background: rgba(152, 152, 159, .92); }
-.island[data-mode="hidden"][data-hs="home"].playing .shell { background: var(--wave, #c9b8ff); }
+.island[data-mode="hidden"] { border-radius: 2px !important; transform: translateY(3px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .22); }
+.island[data-mode="hidden"] .shell { background: rgba(152, 152, 159, .92); }
+.island[data-mode="hidden"].playing .shell { background: var(--wave, #c9b8ff); }
 .shell { position: absolute; inset: 0; overflow: hidden; background: #000; border-radius: inherit; }
 .ear { position: absolute; top: 0; width: var(--ear); height: var(--ear); transition: width .8s var(--spring), height .8s var(--spring); }
 .ear.l { right: 100%; background: radial-gradient(circle farthest-side at 0 100%, transparent 99%, #000 100%); }
@@ -162,6 +157,10 @@ input::placeholder { color: var(--label3); }
 .m-prog { display: flex; align-items: center; gap: 10px; margin-top: 18px; font-size: 11px; color: var(--label2); font-variant-numeric: tabular-nums; }
 .m-prog span { width: 38px; }
 .m-prog span:last-child { text-align: right; }
+/* Livestream: không có thời lượng -> nhãn LIVE + thanh đầy, không tua được */
+.m-prog.live .live-tag { width: auto; display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px 2px 6px; border-radius: 6px; background: rgba(255, 69, 58, .16); color: var(--red); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.m-prog.live .live-tag i { width: 6px; height: 6px; border-radius: 3px; background: var(--red); }
+.m-prog.live .bar i { width: 100%; background: rgba(255, 69, 58, .55); }
 .bar { flex: 1; height: 5px; background: var(--g3); border-radius: 3px; position: relative; cursor: pointer; touch-action: none; }
 .bar::before { content: ""; position: absolute; inset: -12px 0; }
 .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #fff; border-radius: 3px; }
@@ -186,7 +185,8 @@ input::placeholder { color: var(--label3); }
 .out-chips.dragging { cursor: grabbing; }
 .out-chips.dragging .out-chip { pointer-events: none; }
 .out-chip { flex: none; height: 32px; padding: 0 14px; border-radius: 16px; background: var(--g1); font-size: 12px; color: #d1d1d6; gap: 7px; max-width: 190px; }
-.out-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* line-height cố định: tên có chữ CJK (vd. "Redmi 电脑音箱") dùng font dự phòng cao hơn, làm chữ tụt xuống ~2px */
+.out-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 16px; height: 16px; }
 .out-chip:hover { background: var(--g2); }
 .out-chip.on { background: #fff; color: #000; font-weight: 600; }
 .out-chip svg { width: 14px; height: 14px; flex: none; }
