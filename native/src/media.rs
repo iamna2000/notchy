@@ -8,7 +8,7 @@
 //   {"type":"fs","value":bool}                            game / ứng dụng Direct3D toàn màn hình
 //   {"type":"error","msg":..}
 // Vào (stdin), mỗi dòng một lệnh:
-//   play_pause | next | prev | shuffle | seek:<giây> | focus | paste | probe:<x>:<y>
+//   play_pause | next | prev | shuffle | seek:<giây> | focus | paste | probe:<x>:<y>[;<x>:<y>...]
 //   Hết stdin (app tắt, kể cả bị tắt ngang) thì thoát.
 //
 // Chạy: di-media.exe --parent-pid <pid của Electron>  (để bỏ qua cửa sổ của chính app khi dò cửa sổ che)
@@ -345,6 +345,19 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
     Ok(())
 }
 
+// "x1:y1;x2:y2;..." -> các điểm dò cửa sổ che (bỏ qua điểm sai định dạng)
+fn parse_probe(s: &str) -> Vec<(i32, i32)> {
+    s.split(';')
+        .filter_map(|p| {
+            let mut it = p.split(':').map(|v| v.trim().parse::<i32>());
+            match (it.next(), it.next()) {
+                (Some(Ok(x)), Some(Ok(y))) => Some((x, y)),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 fn run_command(mgr: Option<&Manager>, cmd: &str) {
     if cmd == "paste" {
         std::thread::sleep(Duration::from_millis(80));
@@ -439,7 +452,7 @@ fn main() {
     };
 
     let mut ms = MediaState { last_key: String::new(), thumb_ok: false, thumb_tries: 0 };
-    let mut probe: Option<(i32, i32)> = None;
+    let mut probe: Vec<(i32, i32)> = Vec::new();
     let mut last_cover: Option<bool> = None;
     let mut last_fs: Option<bool> = None;
     let mut burst = 0u32;
@@ -453,11 +466,8 @@ fn main() {
             Ok(cmd) => {
                 if cmd == "__quit__" { break; }
                 if let Some(rest) = cmd.strip_prefix("probe:") {
-                    let mut it = rest.split(':').map(|v| v.parse::<i32>());
-                    if let (Some(Ok(x)), Some(Ok(y))) = (it.next(), it.next()) {
-                        probe = Some((x, y));
-                        last_cover = None;
-                    }
+                    probe = parse_probe(rest);
+                    last_cover = None;
                 } else if !cmd.is_empty() {
                     run_command(mgr.as_ref(), &cmd);
                     burst = 4; // phát lại trạng thái vài lần liên tiếp sau lệnh
@@ -467,8 +477,8 @@ fn main() {
                 while let Ok(c) = rx.try_recv() {
                     if c == "__quit__" { return; }
                     if let Some(rest) = c.strip_prefix("probe:") {
-                        let mut it = rest.split(':').map(|v| v.parse::<i32>());
-                        if let (Some(Ok(x)), Some(Ok(y))) = (it.next(), it.next()) { probe = Some((x, y)); last_cover = None; }
+                        probe = parse_probe(rest);
+                        last_cover = None;
                     } else if !c.is_empty() {
                         run_command(mgr.as_ref(), &c);
                         burst = 4;
@@ -492,10 +502,15 @@ fn main() {
         }
 
         // --- Có cửa sổ nào đang đè lên viên thuốc (trình duyệt phóng to, ứng dụng toàn màn hình...) ---
-        if let Some((x, y)) = probe {
+        // Dò nhiều điểm dọc viên thuốc: bị che nếu bất kỳ điểm nào có cửa sổ (không phải màn hình nền)
+        if !probe.is_empty() {
             if now >= next_cover {
-                let cls = cover_at(x, y, parent_pid);
-                let cov = !cls.is_empty() && cls != "desk";
+                let mut cls = String::new();
+                for &(x, y) in &probe {
+                    let c = cover_at(x, y, parent_pid);
+                    if !c.is_empty() && c != "desk" { cls = c; break; }
+                }
+                let cov = !cls.is_empty();
                 if last_cover != Some(cov) {
                     last_cover = Some(cov);
                     emit(json!({ "type": "cover", "value": cov, "cls": cls }));

@@ -51,12 +51,28 @@ function loadSettings() {
 function saveSettings(s) {
   try { fs.writeFileSync(settingsFile(), JSON.stringify(s)); } catch (e) { log('save settings:', e.message); }
 }
-const autoHideOn = () => loadSettings().autoHide !== false;
-// Tự ẩn khi không dùng sau N giây (0 = tắt)
-const IDLE_CHOICES = [0, 5, 10, 30];
-const idleHideSec = () => { const v = Number(loadSettings().idleHide); return IDLE_CHOICES.includes(v) ? v : 0; };
-let idleSec = 0;        // đọc 1 lần từ cài đặt, cập nhật khi đổi trong menu (pollCursor chạy 20 lần/giây)
+// Chế độ tự ẩn (đọc 1 lần từ cài đặt, cập nhật khi đổi trong menu; pollCursor chạy 20 lần/giây):
+//   'smart'   có cửa sổ nằm dưới viên thuốc (trình duyệt, ứng dụng...) và không dùng 5 giây thì ẩn;
+//             bên dưới là màn hình nền thì hiện liên tục (mặc định)
+//   'covered' có cửa sổ nằm dưới thì ẩn ngay
+//   'idle'    không dùng idleSec giây thì ẩn, kể cả không có cửa sổ nào
+//   'off'     không tự ẩn
+const HIDE_MODES = ['smart', 'covered', 'idle', 'off'];
+const SMART_DELAY = 5000;
+const IDLE_CHOICES = [5, 10, 30];
+let hideMode = 'smart';
+let idleSec = 10;
+function loadHideSettings() {
+  const s = loadSettings();
+  hideMode = HIDE_MODES.includes(s.hideMode) ? s.hideMode : 'smart';
+  idleSec = IDLE_CHOICES.includes(Number(s.idleHide)) ? Number(s.idleHide) : 10;
+}
+function setHide(mode, sec) {
+  const s = loadSettings(); s.hideMode = mode; if (sec) s.idleHide = sec; saveSettings(s);
+  loadHideSettings(); lastUse = Date.now(); refreshTrayMenu();
+}
 let lastUse = Date.now();
+let coveredSince = 0;   // lúc bắt đầu có cửa sổ nằm dưới viên thuốc
 
 // ---------- Chỉ cho chạy một bản ----------
 const gotLock = app.requestSingleInstanceLock();
@@ -157,10 +173,15 @@ function pollCursor() {
   const cx = b.x + b.width / 2;
   const dx = Math.abs(p.x - cx);
 
-  // Tự ẩn khi có cửa sổ nằm dưới, hoặc khi không dùng quá idleSec giây;
-  // đưa chuột lên sát mép trên (giữ ~0,3 giây) thì hiện lại
+  // Tự ẩn theo hideMode (xem trên); đưa chuột lên sát mép trên (giữ ~0,3 giây) thì hiện lại
   if (hoverNow || holding || typing || alerting || now <= peekUntil) lastUse = now;
-  const idleDue = idleSec > 0 && now - lastUse > idleSec * 1000;  const wantAuto = ((autoHideOn() && covered) || idleDue) && !alerting && now > peekUntil;
+  if (!covered) coveredSince = 0; else if (!coveredSince) coveredSince = now;
+  // 'smart': đếm 5 giây từ lúc dùng gần nhất hoặc từ lúc cửa sổ vừa xuất hiện bên dưới (lấy mốc muộn hơn)
+  const due = hideMode === 'smart' ? covered && now - Math.max(lastUse, coveredSince) > SMART_DELAY
+    : hideMode === 'covered' ? covered
+    : hideMode === 'idle' ? now - lastUse > idleSec * 1000
+    : false;
+  const wantAuto = due && !alerting && now > peekUntil;
   if (wantAuto) {
     if (!revealed) {
       const atEdge = p.y <= b.y && dx <= island.w / 2 + 60;
@@ -243,12 +264,20 @@ function startMedia() {
   if (mediaProc) log('media bridge:', exe ? 'di-media (Rust)' : 'media.ps1');
   sendProbe();
 }
+// Dò cửa sổ nằm dưới viên thuốc ở 3 điểm: giữa và hai đầu, gần cạnh dưới của viên thuốc thu gọn.
+// probeBox: kích thước viên thuốc ở dạng thu gọn/hover gần nhất (không lấy kích thước lúc mở bảng hay lúc ẩn).
+let probeBox = { w: 156, h: 34 };
+
 function sendProbe() {
   if (!mediaProc || process.platform !== 'win32') return;
   try {
-    const d = targetDisplay();
-    const pt = screen.dipToScreenPoint({ x: Math.round(d.bounds.x + d.bounds.width / 2), y: Math.round(d.bounds.y + 2) });
-    writeProc(mediaProc, `probe:${pt.x}:${pt.y}`);
+    const d = targetDisplay(), cx = d.bounds.x + d.bounds.width / 2;
+    const half = Math.min(190, Math.max(30, probeBox.w / 2 - 12));
+    const y = d.bounds.y + Math.max(4, probeBox.h - 8);
+    const pts = [cx - half, cx, cx + half].map((x) => screen.dipToScreenPoint({ x: Math.round(x), y: Math.round(y) }));
+    const cmd = 'probe:' + pts.map((p) => `${p.x}:${p.y}`).join(';');
+
+    writeProc(mediaProc, cmd);
   } catch (e) { log('probe:', e.message); }
 }
 function ensureSys() {
@@ -491,12 +520,15 @@ function buildMenu() {
     { label: userHidden ? 'Hiện viên thuốc' : 'Ẩn viên thuốc', click: () => { userHidden = !userHidden; updateVisibility(); refreshTrayMenu(); } },
     ...displayMenu(),
     { label: 'Tự ẩn', submenu: [
-      { label: 'Khi có cửa sổ phóng to', type: 'checkbox', checked: autoHideOn(), click: (i) => { const s = loadSettings(); s.autoHide = i.checked; saveSettings(s); } },
+      { label: 'Không tự ẩn', type: 'radio', checked: hideMode === 'off', click: () => setHide('off') },
       { type: 'separator' },
-      { label: 'Khi không dùng', enabled: false },
+      { label: 'Khi có cửa sổ bên dưới', enabled: false },
+      { label: 'Sau 5 giây không dùng', type: 'radio', checked: hideMode === 'smart', click: () => setHide('smart') },
+      { label: 'Ngay lập tức', type: 'radio', checked: hideMode === 'covered', click: () => setHide('covered') },
+      { type: 'separator' },
+      { label: 'Luôn ẩn khi không dùng', enabled: false },
       ...IDLE_CHOICES.map((v) => ({
-        label: v ? `Sau ${v} giây` : 'Không', type: 'radio', checked: idleSec === v,
-        click: () => { const s = loadSettings(); s.idleHide = v; saveSettings(s); idleSec = v; lastUse = Date.now(); refreshTrayMenu(); },
+        label: `Sau ${v} giây`, type: 'radio', checked: hideMode === 'idle' && idleSec === v, click: () => setHide('idle', v),
       })),
     ] },
     { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
@@ -547,7 +579,7 @@ function buildTray() {
 // ---------- Khởi động ----------
 function start() {
   log('start v' + app.getVersion(), 'exec:', process.execPath);
-  idleSec = idleHideSec();
+  loadHideSettings();
   loadClip();
   loadShelf();
   lastClipText = clipList.length ? clipList[0].text : '';
@@ -567,7 +599,11 @@ function start() {
 
 // ---------- Giao tiếp với giao diện ----------
 ipcMain.on('island-size', (_e, s) => {
-  if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) island = { w: s.w, h: s.h };
+  if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
+    island = { w: s.w, h: s.h };
+    // Dạng thu gọn/hover (cao 20..60): cập nhật vùng dò cửa sổ che theo đúng bề rộng viên thuốc
+    if (s.h >= 20 && s.h <= 60 && (s.w !== probeBox.w || s.h !== probeBox.h)) { probeBox = { w: s.w, h: s.h }; sendProbe(); }
+  }
 });
 ipcMain.on('media-cmd', (_e, cmd) => {
   if (typeof cmd !== 'string' || !/^(play_pause|next|prev|shuffle|focus|seek:\d+(\.\d+)?)$/.test(cmd)) return;

@@ -288,9 +288,9 @@ while (-not $quit) {
     if ($cmd -eq '__quit__') { $quit = $true; break }
     if ($cmd -like 'probe:*') {
       try {
-        $parts = $cmd.Split(':')
-        $probeX = [int]$parts[1]
-        $probeY = [int]$parts[2]
+        $parts = $cmd.Substring(6).Split(';')[0].Split(':')   # nhieu diem 'x:y;x:y': ban PowerShell chi dung diem dau
+        $probeX = [int]$parts[0]
+        $probeY = [int]$parts[1]
         $probeSet = $true
         $lastCover = $null
       } catch {}
