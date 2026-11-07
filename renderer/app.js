@@ -18,9 +18,9 @@
   const F = (inner) => `<svg viewBox="0 0 24 24" fill="currentColor">${inner}</svg>`;
   const ICON = {
     music: F('<path d="M16.5 3.2 9.6 4.6a1 1 0 0 0-.8 1v9.1a3.2 3.2 0 1 0 2 3V8.6l4.7-1v5.1a3.2 3.2 0 1 0 2 3V4.2a1 1 0 0 0-1-1z"/>'),
-    drop: F('<path d="M12 2.8c.3 0 .6.2.8.4 2.6 3.2 6.2 7.2 6.2 11.2a7 7 0 0 1-14 0c0-4 3.6-8 6.2-11.2.2-.2.5-.4.8-.4z"/>'),
     alarm: L('<circle cx="12" cy="13.2" r="7.2"/><path d="M12 9.2v4.2l2.6 1.6M4.4 6.2l2.8-2.6M19.6 6.2l-2.8-2.6"/>'),
     clip: F('<path d="M9.2 3a2 2 0 0 0-1.9 1.4H6.8A2.8 2.8 0 0 0 4 7.2v11A2.8 2.8 0 0 0 6.8 21h10.4a2.8 2.8 0 0 0 2.8-2.8v-11a2.8 2.8 0 0 0-2.8-2.8h-.5A2 2 0 0 0 14.8 3zm0 1.6h5.6a.4.4 0 0 1 .4.4v.6a.4.4 0 0 1-.4.4H9.2a.4.4 0 0 1-.4-.4V5a.4.4 0 0 1 .4-.4z"/>'),
+    gauge: L('<path d="M4.6 17.5a8.6 8.6 0 1 1 14.8 0"/><path d="M12 13.2l3.6-4.4"/><circle cx="12" cy="13.6" r="1.4" fill="currentColor" stroke="none"/>', 2),
     toggles: F('<path d="M7.5 3.5h9a4 4 0 0 1 0 8h-9a4 4 0 0 1 0-8zM16.5 5.6a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8zM7.5 12.5h9a4 4 0 0 1 0 8h-9a4 4 0 0 1 0-8zM7.5 14.6a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8z" fill-rule="evenodd"/>'),
     play: F('<path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.4-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/>'),
     pause: F('<rect x="6.2" y="4.8" width="4.2" height="14.4" rx="1.3"/><rect x="13.6" y="4.8" width="4.2" height="14.4" rx="1.3"/>'),
@@ -69,9 +69,7 @@
   const WD_FULL = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
   const WD_SHORT = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
-  const TABS = ['music', 'water', 'calendar', 'alarm', 'clip', 'shelf', 'ctrl'];
-  const EVERY = [0, 15, 20, 30, 45, 60, 90, 120];
-  const SNOOZES = [5, 10, 15];
+  const TABS = ['music', 'sys', 'calendar', 'alarm', 'clip', 'shelf', 'ctrl'];
   const TOPBAR = 46;
   const PX_MIN = 8; // 1 phút = 8px trên thước hẹn giờ
 
@@ -88,8 +86,6 @@
     alarms: store.get('alarms', []), editor: null, snoozes: [],
     notes: store.get('notes', {}),
     sel: today0(), calMonth: store.get('calMonth', false),
-    water: Object.assign({ every: 0, from: 540, to: 1260, msg: 'Uống nước nào', snooze: 5 }, store.get('water', {})),
-    waterNext: 0,
     clip: [], clipQ: '', shelf: [], notice: null,
     ctPanel: store.get('ctPanel', 'timer'),
     timer: { total: store.get('ttotal', 300), remaining: store.get('ttotal', 300), endTs: 0, running: false },
@@ -124,7 +120,7 @@
   function viewH() {
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) : 168;
-      case 'water': return 198;
+      case 'sys': return 268;
       case 'calendar': return S.calMonth ? 414 : 272;
       case 'alarm': return 312;
       case 'clip': return 352;
@@ -157,6 +153,7 @@
     island.style.setProperty('--ear', t.ear + 'px');
     api.size(t.w, t.h);
     syncWave();
+    syncStats();
   }
   function collapseSoon(ms) {
     clearTimeout(closeTimer);
@@ -175,7 +172,7 @@
     else collapseSoon(380);
   });
   api.onHidden((v) => { S.hidden = !!v; applyLayout(); });
-  api.onWinVis((v) => { winOff = !v; document.documentElement.classList.toggle('win-off', winOff); syncWave(); });
+  api.onWinVis((v) => { winOff = !v; document.documentElement.classList.toggle('win-off', winOff); syncWave(); syncStats(); });
   api.onPeek(() => {
     S.peek = true; applyLayout();
     clearTimeout(peekTimer);
@@ -183,7 +180,7 @@
   });
 
   /* ================= Tab ================= */
-  const TB_ICON = { music: ICON.music, water: ICON.drop, alarm: ICON.alarm, clip: ICON.clip, shelf: ICON.shelf, ctrl: ICON.toggles };
+  const TB_ICON = { music: ICON.music, sys: ICON.gauge, alarm: ICON.alarm, clip: ICON.clip, shelf: ICON.shelf, ctrl: ICON.toggles };
   $$('.tb').forEach((b) => { if (TB_ICON[b.dataset.tab]) b.innerHTML = TB_ICON[b.dataset.tab]; });
   function setTab(id, auto) {
     S.tab = id;
@@ -193,6 +190,7 @@
     renderTopDate();
     renderAll();
     syncWave();
+    syncStats();
     applyLayout();
     requestSys(true);
   }
@@ -209,7 +207,6 @@
     const cs = Math.floor(ms / 10) % 100, s = Math.floor(ms / 1000) % 60, m = Math.floor(ms / 60000) % 60, h = Math.floor(ms / 3600000);
     return (h > 0 ? `${h}:${pad(m)}` : pad(m)) + `:${pad(s)}.${pad(cs)}`;
   };
-  const fmtMin = (mn) => `${pad(Math.floor(mn / 60))}:${pad(mn % 60)}`;
   function lunarOf(d) {
     const r = window.Lunar.solarToLunar(d.getDate(), d.getMonth() + 1, d.getFullYear(), 7);
     return { d: r[0], m: r[1], y: r[2], leap: r[3] === 1 };
@@ -578,40 +575,76 @@
     g.fill();
   }
 
-  /* ================= Nhắc uống nước ================= */
-  const saveWater = () => store.set('water', S.water);
-  function scheduleWater() {
-    const w = S.water;
-    if (!w.every) { S.waterNext = 0; return; }
-    S.waterNext = nextInWindow(Date.now() + w.every * 60000);
+  /* ================= Hệ thống: CPU / RAM / GPU / Mạng ================= */
+  // Số liệu do main gửi mỗi giây, CHỈ khi tab này đang mở (đỡ tốn tài nguyên). Mỗi ô có biểu đồ 60 giây.
+  const ST_HIST = 60;
+  const ST_TILES = [
+    { k: 'cpu', name: 'CPU', color: '#64d2ff' },
+    { k: 'ram', name: 'RAM', color: '#bf5af2' },
+    { k: 'gpu', name: 'GPU', color: '#30d158' },
+    { k: 'net', name: 'Mạng', color: '#ff9f0a' },
+  ];
+  const st = { want: false, hist: { cpu: [], ram: [], gpu: [], net: [] } };
+  function syncStats() {
+    const want = !winOff && island.dataset.mode === 'open' && S.tab === 'sys';
+    if (want === st.want) return;
+    st.want = want;
+    if (want) Object.keys(st.hist).forEach((k) => { st.hist[k] = []; }); // mở lại thì vẽ mới, không nối dữ liệu cũ
+    api.stats(want);
   }
-  function nextInWindow(ts) {
-    const w = S.water, d = new Date(ts), mn = d.getHours() * 60 + d.getMinutes();
-    if (mn >= w.from && mn < w.to) return ts;
-    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(w.from / 60), w.from % 60, 0, 0);
-    if (mn >= w.to) t.setDate(t.getDate() + 1);
-    return t.getTime();
+  const fmtRate = (b) => (b == null ? '—' : b < 1048576 ? `${Math.round(b / 1024)} KB/s` : `${(b / 1048576).toFixed(b < 10485760 ? 1 : 0)} MB/s`);
+  const fmtGB = (b, d) => (b / 1073741824).toFixed(d);
+  function buildStats() {
+    const g = $('#stGrid');
+    if (g.childElementCount) return;
+    g.innerHTML = ST_TILES.map((t) => `
+      <div class="st-tile" data-k="${t.k}" style="--c:${t.color}">
+        <div class="st-name">${t.name}</div>
+        <div class="st-val" id="st-${t.k}-v">—</div>
+        <div class="st-sub" id="st-${t.k}-s">&nbsp;</div>
+        <canvas class="st-spark" id="st-${t.k}-c"></canvas>
+      </div>`).join('');
   }
-  function renderWater() {
-    const w = S.water, idx = Math.max(0, EVERY.indexOf(w.every));
-    setSl($('#slEvery'), idx / (EVERY.length - 1), w.every ? `${w.every} phút` : 'Tắt');
-    const s = Math.round(w.from / 30), e = Math.round(w.to / 30);
-    const ticks = Array.from({ length: 48 }, (_, i) => `<i class="${i >= s && i < e ? 'in' : ''}"></i>`).join('');
-    $('#wRange').innerHTML = `<span class="t">${fmtMin(w.from)}</span><div class="ticks2" id="wTicks">${ticks}</div><span class="t">${fmtMin(w.to)}</span>`;
-    const msg = $('#wMsg');
-    if (document.activeElement !== msg) msg.value = w.msg;
-    $('#wSnooze').textContent = `Nhắc lại sau ${w.snooze}′`;
+  function spark(k, color, vals, max) {
+    const cv = $(`#st-${k}-c`);
+    if (!cv) return;
+    const r = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    if (!W || !H) return;
+    if (cv.width !== Math.round(W * r)) { cv.width = Math.round(W * r); cv.height = Math.round(H * r); }
+    const g = cv.getContext('2d');
+    g.setTransform(r, 0, 0, r, 0, 0);
+    g.clearRect(0, 0, W, H);
+    if (vals.length < 2) return;
+    const step = W / (ST_HIST - 1), x0 = W - (vals.length - 1) * step;
+    const y = (v) => H - 1 - Math.min(1, v / max) * (H - 2);
+    g.beginPath();
+    vals.forEach((v, i) => (i ? g.lineTo(x0 + i * step, y(v)) : g.moveTo(x0, y(v))));
+    g.strokeStyle = color; g.lineWidth = 1.5; g.lineJoin = 'round'; g.stroke();
+    g.lineTo(W, H); g.lineTo(x0, H); g.closePath();
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, color + '55'); grad.addColorStop(1, color + '00');
+    g.fillStyle = grad; g.fill();
   }
-  function saveWaterMsg() {
-    const v = $('#wMsg').value.trim();
-    S.water.msg = v || 'Uống nước nào';
-    saveWater();
-    const b = $('#wSave'); b.innerHTML = ICON.check; setTimeout(() => { b.innerHTML = ICON.check; }, 900);
+  function setTile(k, val, sub, hot) {
+    const v = $(`#st-${k}-v`), s = $(`#st-${k}-s`);
+    if (v.textContent !== val) v.textContent = val;
+    if (s.textContent !== sub) s.textContent = sub;
+    v.classList.toggle('hot', !!hot);
   }
-  function fireWater() {
-    startRing({ kind: 'water', title: S.water.msg || 'Uống nước nào', sub: 'Đứng dậy vươn vai một chút nhé' });
-    scheduleWater();
-  }
+  api.onStats((m) => {
+    if (!m || !st.want) return;
+    buildStats();
+    const push = (k, v) => { const h = st.hist[k]; h.push(v == null ? 0 : v); if (h.length > ST_HIST) h.shift(); };
+    const ram = m.ramTotal ? m.ramUsed / m.ramTotal : null, gp = m.gpu;
+    push('cpu', m.cpu); push('ram', ram); push('gpu', gp ? gp.util / 100 : null); push('net', m.down);
+    setTile('cpu', m.cpu == null ? '—' : Math.round(m.cpu * 100) + '%', `${m.cores} luồng`, m.cpu > 0.85);
+    setTile('ram', ram == null ? '—' : Math.round(ram * 100) + '%', `${fmtGB(m.ramUsed, 1)} / ${fmtGB(m.ramTotal, 0)} GB`, ram > 0.85);
+    if (gp) setTile('gpu', Math.round(gp.util) + '%', [gp.temp != null ? Math.round(gp.temp) + '°C' : '', `${(gp.memUsed / 1024).toFixed(1)}/${Math.round(gp.memTotal / 1024)} GB`, gp.power != null ? Math.round(gp.power) + ' W' : ''].filter(Boolean).join(' · '), gp.util > 85);
+    else setTile('gpu', '—', 'Không đọc được GPU');
+    setTile('net', '↓ ' + fmtRate(m.down), `↑ ${fmtRate(m.up)} · ${m.ping == null ? 'mất mạng?' : Math.round(m.ping) + ' ms'}`);
+    const netMax = Math.max(1048576, ...st.hist.net) * 1.15; // thang mạng tự co giãn theo đỉnh trong 60 giây
+    ST_TILES.forEach((t) => spark(t.k, t.color, st.hist[t.k], t.k === 'net' ? netMax : 1));
+  });
 
   /* ================= Lịch + ghi chú ================= */
   const HOL_SOLAR = { '1/1': 'Tết Dương lịch', '14/2': 'Valentine', '8/3': 'Quốc tế Phụ nữ', '30/4': 'Giải phóng miền Nam', '1/5': 'Quốc tế Lao động', '1/6': 'Quốc tế Thiếu nhi', '2/9': 'Quốc khánh', '20/10': 'Phụ nữ Việt Nam', '20/11': 'Nhà giáo Việt Nam', '24/12': 'Đêm Giáng sinh', '25/12': 'Giáng sinh' };
@@ -909,12 +942,12 @@
     S.ring = r;
     $('#ringTitle').textContent = r.title;
     $('#ringSub').textContent = r.sub || '';
-    $('#ringIcon').innerHTML = r.kind === 'timer' ? ICON.hourglass : r.kind === 'water' ? ICON.drop : ICON.bell;
+    $('#ringIcon').innerHTML = r.kind === 'timer' ? ICON.hourglass : ICON.bell;
     const sn = $('#ringSnooze');
-    sn.style.display = (r.kind === 'alarm' || r.kind === 'water' || r.kind === 'timer') ? '' : 'none';
-    sn.textContent = r.kind === 'water' ? `Nhắc lại sau ${S.water.snooze}′` : r.kind === 'timer' ? '+5 phút' : 'Báo lại 5 phút';
+    sn.style.display = (r.kind === 'alarm' || r.kind === 'timer') ? '' : 'none';
+    sn.textContent = r.kind === 'timer' ? '+5 phút' : 'Báo lại 5 phút';
     $('#ringRestart').style.display = r.kind === 'timer' ? '' : 'none';
-    $('#ringStop').textContent = (r.kind === 'water' || r.kind === 'note') ? 'Xong' : 'Tắt';
+    $('#ringStop').textContent = r.kind === 'note' ? 'Xong' : 'Tắt';
     clearTimeout(ringTimeout);
     ringTimeout = setTimeout(() => stopRing(), 60000);
     api.alert(true);
@@ -947,7 +980,6 @@
       for (const n of S.notes[ymd(d)] || []) if (n.at === hhmm) startRing({ kind: 'note', title: n.t, sub: 'Ghi chú · ' + hhmm });
     }
     S.snoozes = S.snoozes.filter((sn) => { if (sn.ts <= now) { startRing({ kind: 'alarm', title: 'Báo thức (báo lại)', sub: fmtClock(new Date()) }); return false; } return true; });
-    if (S.waterNext && now >= S.waterNext) fireWater();
     lastTick = now;
   }
 
@@ -971,7 +1003,7 @@
     }
   }
   function renderAll() {
-    renderMusic(); renderWater(); renderCalendar(); renderAlarms(); renderClip(); renderShelf(); renderIcRow(); renderTimer(); renderSW(); renderLaps(); renderCompact(); renderVol(); renderBri();
+    renderMusic(); renderCalendar(); renderAlarms(); renderClip(); renderShelf(); renderIcRow(); renderTimer(); renderSW(); renderLaps(); renderCompact(); renderVol(); renderBri();
   }
 
   /* ================= Kéo thả (tua nhạc, thanh trượt, thước hẹn giờ...) ================= */
@@ -990,20 +1022,11 @@
       const f = frac(d.el, ev);
       if (d.el.id === 'slVol') setVol(f);
       else if (d.el.id === 'slBri') setBri(f);
-      else if (d.el.id === 'slEvery') {
-        const idx = Math.round(f * (EVERY.length - 1));
-        if (EVERY[idx] !== S.water.every) { S.water.every = EVERY[idx]; saveWater(); scheduleWater(); renderWater(); }
-      }
     } else if (d.k === 'vol2') setVol(frac(d.el, ev));
     else if (d.k === 'ruler') {
       if (S.timer.running) return;
       const mins = clamp(Math.round(d.min0 - (ev.clientX - d.x0) / PX_MIN), 1, 180);
       if (mins * 60 !== S.timer.total) { S.timer.total = S.timer.remaining = mins * 60; store.set('ttotal', S.timer.total); renderTimer(); }
-    } else if (d.k === 'range') {
-      const idx = Math.round(frac(d.el, ev) * 47);
-      const mn = idx * 30, w = S.water;
-      if (Math.abs(mn - w.from) <= Math.abs(mn - w.to)) w.from = Math.min(mn, w.to - 30); else w.to = Math.max(mn, w.from + 30);
-      saveWater(); renderWater(); scheduleWater();
     }
   }
   function endDrag() {
@@ -1025,7 +1048,6 @@
     if ((el = t.closest('.sl'))) { beginDrag({ k: 'sl', el }, ev); return; }
     if ((el = t.closest('.bar[data-vol]'))) { beginDrag({ k: 'vol2', el }, ev); return; }
     if ((el = t.closest('#ruler'))) { beginDrag({ k: 'ruler', el, x0: ev.clientX, min0: S.timer.total / 60 }, ev); return; }
-    if ((el = t.closest('#wTicks'))) { beginDrag({ k: 'range', el }, ev); return; }
   });
   document.addEventListener('pointermove', (ev) => { if (drag) moveDrag(ev); });
   ['pointerup', 'pointercancel'].forEach((e) => document.addEventListener(e, endDrag));
@@ -1053,8 +1075,6 @@
       case 'dev': api.sys('dev:' + el.dataset.id); S.sys.devices.forEach((d) => { d.def = d.id === el.dataset.id; }); renderOut(); break;
       case 'open-sound': api.openSound(); break;
       // Nước
-      case 'w-save': saveWaterMsg(); break;
-      case 'w-snooze-cycle': S.water.snooze = SNOOZES[(SNOOZES.indexOf(S.water.snooze) + 1) % SNOOZES.length]; saveWater(); renderWater(); break;
       // Lịch
       case 'cal-prev': case 'cal-next': {
         const dir = a === 'cal-next' ? 1 : -1;
@@ -1118,8 +1138,7 @@
         stopRing(); renderTimer(); renderCompact(); break;
       case 'ring-snooze':
         if (S.ring && S.ring.kind === 'timer') { T.remaining = 300; T.endTs = Date.now() + 300000; T.running = true; stopRing(); renderTimer(); renderCompact(); break; }
-        if (S.ring && S.ring.kind === 'water') S.waterNext = Date.now() + S.water.snooze * 60000;
-        else S.snoozes.push({ ts: Date.now() + 5 * 60000 });
+        S.snoozes.push({ ts: Date.now() + 5 * 60000 });
         stopRing(); break;
     }
   }
@@ -1217,7 +1236,6 @@
   });
   document.addEventListener('focusout', (ev) => {
     if (!ev.target.matches('input')) return;
-    if (ev.target.id === 'wMsg') saveWaterMsg();
     typingTimer = setTimeout(() => {
       if (document.activeElement && document.activeElement.matches('input')) return;
       S.typing = false; api.typing(false);
@@ -1227,7 +1245,6 @@
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && ev.target.matches('input')) {
       if (ev.target.id === 'noteIn' || ev.target.id === 'noteAt') addNote();
-      if (ev.target.id === 'wMsg') ev.target.blur();
       if (ev.target.id === 'clipQ') ev.target.blur();
     }
     if (ev.key === 'Escape' && ev.target.matches('input')) ev.target.blur();
@@ -1244,16 +1261,13 @@
   $('#shelfClearBtn').innerHTML = ICON.minusCircle;
   $('#clipQx').innerHTML = ICON.xCircle;
   $('#noteAddBtn').innerHTML = ICON.plus;
-  $('#wSave').innerHTML = ICON.check;
   $('#tPlus').innerHTML = ICON.plus;
   $('#tReset').innerHTML = ICON.reset;
-  buildSl($('#slEvery'), 'Nhắc mỗi');
   buildSl($('#slVol'), 'Âm lượng');
   buildSl($('#slBri'), 'Độ sáng');
   buildRuler();
   api.clipGet();
   api.shelfGet();
-  scheduleWater();
   setTab(S.tab);
   applyLayout();
   setInterval(tick, 100);

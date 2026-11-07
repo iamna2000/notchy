@@ -195,14 +195,16 @@ input::placeholder { color: var(--label3); }
 .empty b { font-size: 15px; font-weight: 600; color: #fff; }
 .empty span { font-size: 12px; max-width: 340px; line-height: 1.4; }
 
-/* ================== Nhắc uống nước ================== */
-.range { display: flex; align-items: center; gap: 10px; height: 34px; margin-top: 10px; background: var(--g1); border-radius: 11px; padding: 0 5px; }
-.range .t { height: 24px; padding: 0 10px; border-radius: 8px; background: #000; font-size: 12px; font-variant-numeric: tabular-nums; display: flex; align-items: center; }
-.range .ticks2 { flex: 1; height: 22px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; touch-action: none; }
-.range .ticks2 i { width: 2px; height: 12px; border-radius: 1px; background: var(--g3); }
-.range .ticks2 i.in { background: var(--blue); height: 20px; }
-.w-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-.w-row .field { flex: 1; }
+/* ================== Hệ thống: 4 ô CPU / RAM / GPU / Mạng ================== */
+.st-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.st-tile { position: relative; height: 92px; padding: 10px 12px 0; border-radius: 16px; background: var(--g1); overflow: hidden; }
+.st-name { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--label2); letter-spacing: .02em; }
+.st-name::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: var(--c); }
+.st-val { margin-top: 3px; font-family: var(--font-display); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; transition: color .3s; }
+.st-tile[data-k="net"] .st-val { font-size: 18px; margin-top: 5px; }
+.st-val.hot { color: var(--red); }
+.st-sub { position: relative; z-index: 1; margin-top: 1px; font-size: 11px; color: var(--label2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-spark { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 34px; opacity: .9; pointer-events: none; }
 
 /* ================== Lịch ================== */
 .cal-head { display: flex; align-items: center; justify-content: space-between; height: 28px; margin-top: 2px; }

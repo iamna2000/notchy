@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('api', {
   onHover: (cb) => on('hover', (v) => cb(!!v)),
   onHidden: (cb) => on('hidden', (v) => cb(!!v)),
   onWinVis: (cb) => on('winvis', (v) => cb(!!v)),
+  onStats: (cb) => on('stats', cb),
+  stats: (v) => ipcRenderer.send('stats', !!v),
   onMedia: (cb) => on('media', cb),
   onSys: (cb) => on('sys', cb),
   onClip: (cb) => on('clip', cb),

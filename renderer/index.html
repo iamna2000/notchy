@@ -25,7 +25,7 @@
         <nav class="topbar">
           <div class="tb-grp">
             <button class="tb" data-tab="music" title="Nhạc"></button>
-            <button class="tb" data-tab="water" title="Nhắc uống nước"></button>
+            <button class="tb" data-tab="sys" title="Hệ thống"></button>
             <button class="tb tb-date" data-tab="calendar" title="Lịch"><span id="tbDate">--</span></button>
           </div>
           <div class="tb-grp">
@@ -44,15 +44,9 @@
             <div class="m-out" id="musicOut"></div>
           </section>
 
-          <!-- Nhắc uống nước -->
-          <section class="view" data-view="water">
-            <div class="sl" id="slEvery"></div>
-            <div class="range" id="wRange"></div>
-            <div class="w-row">
-              <input class="field" id="wMsg" maxlength="60" placeholder="Nội dung nhắc" spellcheck="false" />
-              <button class="sq" id="wSave" data-act="w-save" title="Lưu"></button>
-              <button class="chip" id="wSnooze" data-act="w-snooze-cycle"></button>
-            </div>
+          <!-- Hệ thống: CPU / RAM / GPU / Mạng -->
+          <section class="view" data-view="sys">
+            <div class="st-grid" id="stGrid"></div>
           </section>
 
           <!-- Lịch -->

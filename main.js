@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
 const { spawn, execFile, execFileSync } = require('child_process');
+const os = require('os');
+const net = require('net');
 
 const WIN_W = 640;
 const WIN_H = 470;
@@ -71,7 +73,7 @@ if (!gotLock) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     if (dndByUs) setToasts(true, true);
-    stopProc(mediaProc); stopProc(sysProc);
+    stopProc(mediaProc); stopProc(sysProc); stopStats();
     flushClip();
   });
 }
@@ -230,8 +232,74 @@ function ensureSys() {
   sysProc = spawnPS('system.ps1', [], (line) => {
     let m;
     try { m = JSON.parse(line); } catch (_) { return; }
-    send('sys', m);
+    if (m.type === 'net') onNet(m); else send('sys', m);
   }, () => { sysProc = null; });
+}
+
+// ---------- Theo dõi hệ thống (tab Hệ thống) ----------
+// Chỉ chạy khi tab đang mở. CPU/RAM: Node; GPU: nvidia-smi chạy liên tục (-lms); mạng: lệnh 'net' của
+// system.ps1; độ trễ: thời gian bắt tay TCP tới 1.1.1.1:443 (không cần quyền ICMP, không phụ thuộc ngôn ngữ).
+const stats = { on: false, timer: null, gpuProc: null, gpu: null, gpuOk: true, cpuPrev: null, netPrev: null, down: null, up: null, ping: null, tick: 0 };
+function cpuTimes() {
+  let idle = 0, total = 0;
+  for (const c of os.cpus()) { const t = c.times; idle += t.idle; total += t.user + t.nice + t.sys + t.idle + t.irq; }
+  return { idle, total };
+}
+function onNet(m) {
+  const now = Date.now(), p = stats.netPrev;
+  if (p && now > p.at && m.rx >= p.rx && m.tx >= p.tx) {
+    const dt = (now - p.at) / 1000;
+    stats.down = (m.rx - p.rx) / dt; stats.up = (m.tx - p.tx) / dt;
+  }
+  stats.netPrev = { rx: m.rx, tx: m.tx, at: now };
+}
+function startGpu() {
+  if (stats.gpuProc || !stats.gpuOk || process.platform !== 'win32') return;
+  let p;
+  try {
+    p = spawn('nvidia-smi', ['--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw',
+      '--format=csv,noheader,nounits', '-lms', '1000'], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) { stats.gpuOk = false; return; }
+  p.on('error', () => { stats.gpuOk = false; stats.gpu = null; stats.gpuProc = null; }); // không có card NVIDIA
+  readline.createInterface({ input: p.stdout }).on('line', (line) => {
+    const v = line.split(',').map((s) => parseFloat(s));
+    if (v.length >= 4 && !isNaN(v[0])) stats.gpu = { util: v[0], temp: isNaN(v[1]) ? null : v[1], memUsed: v[2], memTotal: v[3], power: isNaN(v[4]) ? null : v[4] };
+  });
+  p.on('exit', () => { if (stats.gpuProc === p) stats.gpuProc = null; });
+  stats.gpuProc = p;
+}
+function measurePing() {
+  const t0 = process.hrtime.bigint();
+  const s = net.connect({ host: '1.1.1.1', port: 443 });
+  const done = (ms) => { stats.ping = ms; s.destroy(); };
+  s.setTimeout(1500, () => done(null));
+  s.once('connect', () => done(Number(process.hrtime.bigint() - t0) / 1e6));
+  s.once('error', () => done(null));
+}
+function statsTick() {
+  const c = cpuTimes(), p = stats.cpuPrev;
+  const cpu = p && c.total > p.total ? Math.max(0, Math.min(1, 1 - (c.idle - p.idle) / (c.total - p.total))) : null;
+  stats.cpuPrev = c;
+  ensureSys(); writeProc(sysProc, 'net');
+  if (stats.tick++ % 2 === 0) measurePing();
+  const total = os.totalmem();
+  send('stats', {
+    cpu, cores: os.cpus().length,
+    ramUsed: total - os.freemem(), ramTotal: total,
+    gpu: stats.gpu, down: stats.down, up: stats.up, ping: stats.ping,
+  });
+}
+function startStats() {
+  if (stats.on) return;
+  stats.on = true; stats.cpuPrev = cpuTimes(); stats.netPrev = null; stats.down = stats.up = null; stats.tick = 0;
+  startGpu();
+  ensureSys(); writeProc(sysProc, 'net');
+  stats.timer = setInterval(statsTick, 1000);
+}
+function stopStats() {
+  stats.on = false;
+  clearInterval(stats.timer); stats.timer = null;
+  stopProc(stats.gpuProc); stats.gpuProc = null;
 }
 
 // ---------- Bảng tạm ----------
@@ -514,3 +582,4 @@ ipcMain.on('shelf-drag', (e, id) => {
   try { e.sender.startDrag({ file: it.path, icon }); } catch (err) { log('shelf drag:', err.message); }
 });
 ipcMain.on('notice', () => { peekUntil = Date.now() + 4200; });
+ipcMain.on('stats', (_e, on) => { if (on) startStats(); else stopStats(); });

@@ -228,6 +228,22 @@ function Emit-Devices {
   }
   Emit @{ type = 'sys'; devices = $list }
 }
+# Tong so byte da nhan/gui cua cac card mang dang ra Internet (co default gateway).
+# Chi lay card co gateway de khong dem trung qua card ao (Hyper-V vEthernet, VPN...).
+function Emit-Net {
+  $rx = 0.0; $tx = 0.0; $n = 0
+  foreach ($ni in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+    try {
+      if ($ni.OperationalStatus -ne 'Up') { continue }
+      $t = [string]$ni.NetworkInterfaceType
+      if ($t -eq 'Loopback' -or $t -eq 'Tunnel') { continue }
+      if ($ni.GetIPProperties().GatewayAddresses.Count -eq 0) { continue }
+      $s = $ni.GetIPStatistics()
+      $rx += [double]$s.BytesReceived; $tx += [double]$s.BytesSent; $n++
+    } catch {}
+  }
+  Emit @{ type = 'net'; rx = $rx; tx = $tx; n = $n }
+}
 
 Emit-State
 Emit-Devices
@@ -237,6 +253,7 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
   try {
     if ($cmd -eq 'get') { Emit-State }
     elseif ($cmd -eq 'devices') { Emit-Devices }
+    elseif ($cmd -eq 'net') { Emit-Net }
     elseif ($cmd -eq 'mute') { if ($audioOk) { [DIAudio.Audio]::SetMute(-not [DIAudio.Audio]::GetMute()) }; Emit-State }
     elseif ($cmd -like 'vol:*') {
       $v = [double]::Parse($cmd.Substring(4), [System.Globalization.CultureInfo]::InvariantCulture)
