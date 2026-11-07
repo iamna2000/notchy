@@ -99,11 +99,13 @@
   let closeTimer = null, peekTimer = null;
 
   const hasMusic = () => !!(S.media.active && S.media.title && (S.media.status === 'Playing' || S.media.status === 'Paused'));
-  // Viên thuốc thu gọn chỉ hiện nhạc khi đang phát, hoặc vừa tạm dừng < 60 giây (tạm dừng rồi phát lại không
-  // làm viên thuốc nhảy qua lại). Tạm dừng lâu thì về ngày · giờ · thời tiết; bảng nhạc vẫn giữ bài đang dừng.
-  const PAUSE_KEEP = 60000;
+  // Viên thuốc thu gọn chỉ hiện nhạc khi đang phát, hoặc vừa tạm dừng < 5 giây (bấm tạm dừng rồi phát lại ngay
+  // không làm viên thuốc nhảy qua lại). Dừng lâu hơn thì về ngày · giờ · thời tiết; bảng nhạc vẫn giữ bài đang dừng.
+  // Đang rê chuột trên viên thuốc nhạc (vừa bấm tạm dừng ở đó) thì giữ nguyên, không đổi dưới con trỏ.
+  const PAUSE_KEEP = 5000;
   let lastPlayingAt = 0; // lần cuối thấy đang phát (mở app khi nhạc đã dừng sẵn thì = 0 -> hiện ngày giờ ngay)
-  const compactMusic = () => hasMusic() && (S.media.status === 'Playing' || (lastPlayingAt > 0 && Date.now() - lastPlayingAt < PAUSE_KEEP));
+  const compactMusic = () => hasMusic() && (S.media.status === 'Playing' || island.dataset.mode === 'hover'
+    || (lastPlayingAt > 0 && Date.now() - lastPlayingAt < PAUSE_KEEP));
   const isPlaying = () => S.media.active && S.media.status === 'Playing';
 
   // Sóng âm ở viên thuốc (xem waveStart/syncWave bên dưới). Khai báo sớm vì applyLayout gọi syncWave.
