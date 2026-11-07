@@ -42,12 +42,19 @@ process.on('uncaughtException', (e) => log('uncaught:', e && e.stack ? e.stack :
 
 const settingsFile = () => path.join(userDir(), 'settings.json');
 function loadSettings() {
-  try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch (_) { return {}; }
+  // Bỏ BOM ở đầu (Notepad/PowerShell có thể thêm vào): nếu không, JSON.parse lỗi, cài đặt coi như trống
+  // và lần lưu tiếp theo sẽ ghi đè mất hết
+  try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8').replace(/^﻿/, '')); } catch (_) { return {}; }
 }
 function saveSettings(s) {
   try { fs.writeFileSync(settingsFile(), JSON.stringify(s)); } catch (e) { log('save settings:', e.message); }
 }
 const autoHideOn = () => loadSettings().autoHide !== false;
+// Tự ẩn khi không dùng sau N giây (0 = tắt)
+const IDLE_CHOICES = [0, 5, 10, 30];
+const idleHideSec = () => { const v = Number(loadSettings().idleHide); return IDLE_CHOICES.includes(v) ? v : 0; };
+let idleSec = 0;        // đọc 1 lần từ cài đặt, cập nhật khi đổi trong menu (pollCursor chạy 20 lần/giây)
+let lastUse = Date.now();
 
 // ---------- Chỉ cho chạy một bản ----------
 const gotLock = app.requestSingleInstanceLock();
@@ -136,8 +143,10 @@ function pollCursor() {
   const cx = b.x + b.width / 2;
   const dx = Math.abs(p.x - cx);
 
-  // Tự ẩn khi có cửa sổ nằm dưới; đưa chuột lên sát mép trên (giữ ~0,3 giây) thì hiện lại
-  const wantAuto = autoHideOn() && covered && !alerting && now > peekUntil;
+  // Tự ẩn khi có cửa sổ nằm dưới, hoặc khi không dùng quá idleSec giây;
+  // đưa chuột lên sát mép trên (giữ ~0,3 giây) thì hiện lại
+  if (hoverNow || holding || typing || alerting || now <= peekUntil) lastUse = now;
+  const idleDue = idleSec > 0 && now - lastUse > idleSec * 1000;  const wantAuto = ((autoHideOn() && covered) || idleDue) && !alerting && now > peekUntil;
   if (wantAuto) {
     if (!revealed) {
       const atEdge = p.y <= b.y && dx <= island.w / 2 + 60;
@@ -348,6 +357,10 @@ function buildMenu() {
     { type: 'separator' },
     { label: userHidden ? 'Hiện viên thuốc' : 'Ẩn viên thuốc', click: () => { userHidden = !userHidden; updateVisibility(); refreshTrayMenu(); } },
     { label: 'Tự ẩn khi có cửa sổ phóng to', type: 'checkbox', checked: autoHideOn(), click: (i) => { const s = loadSettings(); s.autoHide = i.checked; saveSettings(s); } },
+    { label: 'Tự ẩn khi không dùng', submenu: IDLE_CHOICES.map((v) => ({
+      label: v ? `Sau ${v} giây` : 'Tắt', type: 'radio', checked: idleSec === v,
+      click: () => { const s = loadSettings(); s.idleHide = v; saveSettings(s); idleSec = v; lastUse = Date.now(); refreshTrayMenu(); },
+    })) },
     { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
     { label: 'Mở thư mục nhật ký lỗi', click: () => shell.showItemInFolder(path.join(userDir(), 'log.txt')) },
     { type: 'separator' },
@@ -381,6 +394,7 @@ function buildTray() {
 // ---------- Khởi động ----------
 function start() {
   log('start v' + app.getVersion(), 'exec:', process.execPath);
+  idleSec = idleHideSec();
   loadClip();
   loadShelf();
   lastClipText = clipList.length ? clipList[0].text : '';
