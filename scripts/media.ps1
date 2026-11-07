@@ -129,38 +129,29 @@ if ($mgr -eq $null) {
   Emit @{ type = 'error'; msg = ('Khong doc duoc nhac: ' + $initError) }
 }
 
-# Doc anh bia. Co 2 cach de du phong; tra ve '' neu chua co (ung dung co the gui anh tre hon ten bai mot chut).
+# Doc anh bia; tra ve '' neu chua co (ung dung co the gui anh tre hon ten bai mot chut).
+# PowerShell 5.1 nhan stream WinRT duoi dang System.__ComObject tran: goi thang .Size, .ContentType
+# hay truyen vao AsStreamForRead / DataReader deu hong (Size rong -> truoc day luon tra ve '').
+# Goi qua reflection theo dung interface thi .NET tu QueryInterface nen doc duoc.
+$asStreamForRead = $null
+$ctProp = $null
+try {
+  $asStreamForRead = [System.IO.WindowsRuntimeStreamExtensions].GetMethod('AsStreamForRead', [type[]]@([Windows.Storage.Streams.IInputStream]))
+  $ctProp = [Windows.Storage.Streams.IContentTypeProvider].GetProperty('ContentType')
+} catch { LogErr ('thumb init: ' + $_.Exception.Message) }
+
 function Get-Thumb($props, $tryNo) {
   try {
-    if ($props.Thumbnail -eq $null) { return '' }
+    if ($asStreamForRead -eq $null -or $props.Thumbnail -eq $null) { return '' }
     $rs2 = Await ($props.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
     if ($rs2 -eq $null) { return '' }
-    $size = [int]$rs2.Size
-    if ($size -le 0) { return '' }
-    $bytes = $null
-    try {
-      $stream = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($rs2)
-      $ms = New-Object System.IO.MemoryStream
-      $stream.CopyTo($ms)
-      $bytes = $ms.ToArray()
-    } catch {
-      if ($tryNo -le 2) { LogErr ('thumb A: ' + $_.Exception.Message) }
-    }
-    if ($bytes -eq $null -or $bytes.Length -lt 100) {
-      try {
-        $dr = [Windows.Storage.Streams.DataReader]::new($rs2)
-        $n = Await ($dr.LoadAsync([uint32]$size)) ([uint32])
-        $bytes = New-Object byte[] $size
-        $dr.ReadBytes($bytes)
-        $dr.DetachStream()
-      } catch {
-        if ($tryNo -le 2) { LogErr ('thumb B: ' + $_.Exception.Message) }
-        return ''
-      }
-    }
-    if ($bytes -eq $null -or $bytes.Length -lt 100) { return '' }
+    $stream = $asStreamForRead.Invoke($null, @($rs2))
+    $ms = New-Object System.IO.MemoryStream
+    try { $stream.CopyTo($ms) } finally { $stream.Dispose() }
+    $bytes = $ms.ToArray()
+    if ($bytes.Length -lt 100) { return '' }
     $mime = ''
-    try { $mime = [string]$rs2.ContentType } catch {}
+    try { $mime = [string]$ctProp.GetValue($rs2) } catch {}
     if (-not $mime) { $mime = 'image/jpeg' }
     return ('data:' + $mime + ';base64,' + [Convert]::ToBase64String($bytes))
   } catch {
