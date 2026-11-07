@@ -5,6 +5,7 @@ const on = (ch, cb) => ipcRenderer.on(ch, (_e, v) => cb(v));
 contextBridge.exposeInMainWorld('api', {
   onHover: (cb) => on('hover', (v) => cb(!!v)),
   onHidden: (cb) => on('hidden', (v) => cb(!!v)),
+  onWinVis: (cb) => on('winvis', (v) => cb(!!v)),
   onMedia: (cb) => on('media', cb),
   onSys: (cb) => on('sys', cb),
   onClip: (cb) => on('clip', cb),

@@ -149,6 +149,7 @@
     else collapseSoon(380);
   });
   api.onHidden((v) => { S.hidden = !!v; applyLayout(); });
+  api.onWinVis((v) => document.documentElement.classList.toggle('win-off', !v));
   api.onPeek(() => {
     S.peek = true; applyLayout();
     clearTimeout(peekTimer);

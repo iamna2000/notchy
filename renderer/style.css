@@ -350,3 +350,5 @@ body.dropping .shelf-list { outline: 1.5px dashed var(--blue); outline-offset: 3
 .island:not([data-mode="open"]) .eq.on i,
 .view:not(.on) .eq.on i,
 .island:not([data-mode="ring"]) .ring-icon { animation-play-state: paused; }
+/* Cả cửa sổ đang ẩn (ẩn từ khay, game toàn màn hình): dừng mọi animation */
+.win-off *, .win-off *::before, .win-off *::after { animation-play-state: paused !important; }

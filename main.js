@@ -104,6 +104,10 @@ function createWindow() {
   win.once('ready-to-show', () => updateVisibility());
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone:', JSON.stringify(d)));
   win.on('closed', () => { win = null; });
+  // backgroundThrottling tắt (để báo thức chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
+  // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
+  win.on('show', () => send('winvis', true));
+  win.on('hide', () => send('winvis', false));
   screen.on('display-metrics-changed', placeWindow);
   screen.on('display-added', placeWindow);
   screen.on('display-removed', placeWindow);
