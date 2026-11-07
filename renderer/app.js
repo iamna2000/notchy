@@ -28,7 +28,7 @@
     prev: F('<path d="M20.4 6.6v10.8a1 1 0 0 1-1.55.84l-7.2-4.7v3.86a1 1 0 0 1-1.55.84l-7.6-4.9a1 1 0 0 1 0-1.68l7.6-4.9a1 1 0 0 1 1.55.84v3.86l7.2-4.7a1 1 0 0 1 1.55.84z"/>'),
     shuffle: L('<path d="M3 7h3c2 0 3.2 1 4.3 2.7l3.4 5.6c1.1 1.7 2.3 2.7 4.3 2.7h3M3 17h3c1.3 0 2.3-.4 3.1-1.2M13.8 8.7C14.7 7.6 15.8 7 17.2 7H21M18.4 4.4 21 7l-2.6 2.6M18.4 14.4 21 17l-2.6 2.6"/>', 2),
     airplay: L('<path d="M8 17.5H6.5A2.5 2.5 0 0 1 4 15V7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5V15a2.5 2.5 0 0 1-2.5 2.5H16"/><path d="m12 14.2 4.4 5.8H7.6z"/>', 2),
-    spkLow: F('<path d="M4 9.8h3l4-3.3v11l-4-3.3H4z"/>'),
+    spkLow: L('<path d="M4 9.8h3l4-3.3v11l-4-3.3H4z" fill="currentColor"/>', 1.8), // thân loa vẽ y hệt spkHigh để cùng tỉ lệ
     spkHigh: L('<path d="M4 9.8h3l4-3.3v11l-4-3.3H4z" fill="currentColor"/><path d="M14.6 9.2a4 4 0 0 1 0 5.6M17 6.8a7.4 7.4 0 0 1 0 10.4"/>', 1.8),
     spkMute: L('<path d="M4 9.8h3l4-3.3v11l-4-3.3H4z" fill="currentColor"/><path d="m15 9.5 5 5M20 9.5l-5 5"/>', 1.8),
     monitor: L('<rect x="3.5" y="4.5" width="17" height="11" rx="2"/><path d="M9 20h6M12 15.5V20"/>', 1.8),

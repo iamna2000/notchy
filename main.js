@@ -83,9 +83,20 @@ function peek() {
 const send = (ch, v) => { if (win && !win.isDestroyed()) win.webContents.send(ch, v); };
 
 // ---------- Cửa sổ ----------
+// Màn hình hiển thị viên thuốc: theo cài đặt (id, rồi tên nếu id đổi sau khi cắm lại), không có thì màn hình chính
+function targetDisplay() {
+  const s = loadSettings().display, all = screen.getAllDisplays();
+  if (s) {
+    const d = all.find((x) => x.id === s.id) || (s.label && all.find((x) => x.label === s.label));
+    if (d) return d;
+  }
+  return screen.getPrimaryDisplay();
+}
+const displayName = (d, i) => `${d.label || `Màn hình ${i + 1}`} (${d.size.width}×${d.size.height})`;
+
 function placeWindow() {
   if (!win) return;
-  const { x, y, width } = screen.getPrimaryDisplay().bounds;
+  const { x, y, width } = targetDisplay().bounds;
   win.setBounds({ x: Math.round(x + (width - WIN_W) / 2), y, width: WIN_W, height: WIN_H });
   sendProbe();
 }
@@ -122,9 +133,10 @@ function createWindow() {
   // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
   win.on('show', () => send('winvis', true));
   win.on('hide', () => send('winvis', false));
+  // Cắm/rút màn hình: đặt lại vị trí và cập nhật danh sách màn hình trong menu
   screen.on('display-metrics-changed', placeWindow);
-  screen.on('display-added', placeWindow);
-  screen.on('display-removed', placeWindow);
+  screen.on('display-added', () => { placeWindow(); refreshTrayMenu(); });
+  screen.on('display-removed', () => { placeWindow(); refreshTrayMenu(); });
 }
 
 function updateVisibility() {
@@ -208,7 +220,7 @@ function startMedia() {
 function sendProbe() {
   if (!mediaProc || process.platform !== 'win32') return;
   try {
-    const d = screen.getPrimaryDisplay();
+    const d = targetDisplay();
     const pt = screen.dipToScreenPoint({ x: Math.round(d.bounds.x + d.bounds.width / 2), y: Math.round(d.bounds.y + 2) });
     writeProc(mediaProc, `probe:${pt.x}:${pt.y}`);
   } catch (e) { log('probe:', e.message); }
@@ -353,19 +365,39 @@ function trayImage() {
 }
 function buildMenu() {
   return Menu.buildFromTemplate([
-    { label: 'Dynamic Island', enabled: false },
+    { label: `Dynamic Island ${app.getVersion()}`, enabled: false },
     { type: 'separator' },
     { label: userHidden ? 'Hiện viên thuốc' : 'Ẩn viên thuốc', click: () => { userHidden = !userHidden; updateVisibility(); refreshTrayMenu(); } },
-    { label: 'Tự ẩn khi có cửa sổ phóng to', type: 'checkbox', checked: autoHideOn(), click: (i) => { const s = loadSettings(); s.autoHide = i.checked; saveSettings(s); } },
-    { label: 'Tự ẩn khi không dùng', submenu: IDLE_CHOICES.map((v) => ({
-      label: v ? `Sau ${v} giây` : 'Tắt', type: 'radio', checked: idleSec === v,
-      click: () => { const s = loadSettings(); s.idleHide = v; saveSettings(s); idleSec = v; lastUse = Date.now(); refreshTrayMenu(); },
-    })) },
+    ...displayMenu(),
+    { label: 'Tự ẩn', submenu: [
+      { label: 'Khi có cửa sổ phóng to', type: 'checkbox', checked: autoHideOn(), click: (i) => { const s = loadSettings(); s.autoHide = i.checked; saveSettings(s); } },
+      { type: 'separator' },
+      { label: 'Khi không dùng', enabled: false },
+      ...IDLE_CHOICES.map((v) => ({
+        label: v ? `Sau ${v} giây` : 'Không', type: 'radio', checked: idleSec === v,
+        click: () => { const s = loadSettings(); s.idleHide = v; saveSettings(s); idleSec = v; lastUse = Date.now(); refreshTrayMenu(); },
+      })),
+    ] },
     { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
-    { label: 'Mở thư mục nhật ký lỗi', click: () => shell.showItemInFolder(path.join(userDir(), 'log.txt')) },
     { type: 'separator' },
+    { label: 'Khởi động lại', click: () => { app.relaunch(); app.quit(); } },
+    { label: 'Mở nhật ký lỗi', click: () => shell.showItemInFolder(path.join(userDir(), 'log.txt')) },
     { label: 'Thoát (Ctrl+Alt+Q)', click: () => app.quit() },
   ]);
+}
+// Mục chọn màn hình: chỉ hiện khi có từ 2 màn hình
+function displayMenu() {
+  const all = screen.getAllDisplays();
+  if (all.length < 2) return [];
+  const cur = targetDisplay(), primary = screen.getPrimaryDisplay();
+  return [{ label: 'Màn hình', submenu: all.map((d, i) => ({
+    label: displayName(d, i) + (d.id === primary.id ? ' · chính' : ''), type: 'radio', checked: d.id === cur.id,
+    click: () => {
+      const s = loadSettings(); s.display = { id: d.id, label: d.label || '' }; saveSettings(s);
+      placeWindow(); refreshTrayMenu();
+      peekUntil = Date.now() + 2500; // hiện viên thuốc một lúc ở màn hình mới cho dễ thấy
+    },
+  })) }];
 }
 function refreshTrayMenu() { try { if (tray) tray.setContextMenu(buildMenu()); } catch (e) { log('tray menu:', e.message); } }
 // Windows 11 hay giấu icon mới trong mũi tên ^; đặt cờ "luôn hiện" cho icon của app
