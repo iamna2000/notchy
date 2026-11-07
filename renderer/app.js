@@ -108,10 +108,16 @@
   // Sóng âm ở viên thuốc (xem waveStart/syncWave bên dưới). Khai báo sớm vì applyLayout gọi syncWave.
   const BANDS = [[60, 250], [250, 1000], [1000, 4000], [4000, 12000]]; // trầm, trung trầm, trung cao, cao
   const BAND_GAIN = [0.9, 1.0, 1.25, 1.7];                            // dải cao vốn nhỏ hơn: nâng lên cho đều
-  const wave = { cv: null, g: null, hs: '', stream: null, ctx: null, an: null, data: null, raf: 0, lvl: [0, 0, 0, 0], last: 0, starting: false, stopTimer: 0, failed: false };
+  const wave = { slots: {}, stream: null, ctx: null, an: null, data: null, raf: 0, lvl: [0, 0, 0, 0], last: 0, starting: false, stopTimer: 0, failed: false };
   let winOff = false;
-  // Chỉ nghe khi sóng đang thật sự hiện: đang phát, viên thuốc thu gọn, cửa sổ không ẩn
-  const waveWanted = () => !winOff && isPlaying() && !!wave.cv && island.dataset.mode === 'compact';
+  // Chỗ vẽ sóng đang hiện: viên thuốc thu gọn, hoặc bảng nhạc khi mở rộng; null nếu không chỗ nào hiện
+  function waveSlot() {
+    const m = island.dataset.mode;
+    const s = m === 'compact' ? wave.slots.c : (m === 'open' && S.tab === 'music') ? wave.slots.m : null;
+    return s && s.g && s.cv.isConnected ? s : null;
+  }
+  // Chỉ nghe khi sóng đang thật sự hiện và đang phát, cửa sổ không ẩn
+  const waveWanted = () => !winOff && isPlaying() && !!waveSlot();
 
   function viewH() {
     switch (S.tab) {
@@ -177,6 +183,7 @@
     $$('.view').forEach((v) => v.classList.toggle('on', v.dataset.view === id));
     renderTopDate();
     renderAll();
+    syncWave();
     applyLayout();
     requestSys(true);
   }
@@ -286,7 +293,7 @@
       <div class="m-row">
         <div class="art ${m.status === 'Paused' ? 'paused' : ''}" id="mArt" data-act="m-focus" title="Mở ${esc(appName(m.app) || 'trình phát')}">${m.thumb ? '' : ICON.music}</div>
         <div class="m-meta"><div class="m-title">${esc(m.title)}</div><div class="m-artist">${esc(m.artist || m.album || appName(m.app) || ' ')}</div></div>
-        <div class="m-eq eq ${isPlaying() ? 'on' : ''}"><i></i><i></i><i></i></div>
+        <canvas class="m-eq c-wave ${isPlaying() ? '' : 'idle'}" id="mWave"></canvas>
       </div>
       <div class="m-prog"><span id="mPos">0:00</span><div class="bar" id="mBar"><i id="mFill"></i><b id="mKnob"></b></div><span id="mRem">${hasDur ? '-0:00' : '--:--'}</span></div>
       <div class="m-ctrls">
@@ -297,6 +304,8 @@
         <button data-act="m-out" class="${S.outOpen ? 'on' : ''}" aria-label="Thiết bị phát">${ICON.airplay}</button>
       </div>`;
     if (m.thumb) $('#mArt').style.backgroundImage = `url("${m.thumb}")`;
+    waveCanvas('m', $('#mWave'));
+    syncWave();
     if (isPlaying()) $$('.m-title, .m-artist', body).forEach((el) => {
       if (el.scrollWidth <= el.clientWidth + 1) return;
       const t = el.textContent, item = `<span class="mq-i">${esc(t)}</span>`;
@@ -424,7 +433,7 @@
       cr.innerHTML = tRun ? '<span class="c-timer" id="cTimer"></span>'
         : `<canvas class="c-wave ${isPlaying() ? '' : 'idle'}" id="cWave"></canvas>`
           + `<button class="c-pp" data-act="m-play" aria-label="Phát/Tạm dừng">${isPlaying() ? ICON.pause : ICON.play}</button>`;
-      waveCanvas($('#cWave'));
+      waveCanvas('c', $('#cWave'));
       if (music) { const a = $('#cArt'); if (S.media.thumb) a.style.backgroundImage = `url("${S.media.thumb}")`; else a.innerHTML = ICON.music; }
     }
     const t = $('#cTimer');
@@ -487,7 +496,7 @@
     } else {
       if (wave.raf) { cancelAnimationFrame(wave.raf); wave.raf = 0; }
       wave.lvl = [0, 0, 0, 0];
-      waveDraw([4, 4, 4, 4]);
+      Object.values(wave.slots).forEach((s) => waveDraw(s, [4, 4, 4, 4]));
       // Ngừng vẽ ngay; nhả hẳn luồng nếu không cần trong 30 giây. Không dùng ctx.suspend(): sau khi
       // resume, nguồn loopback chỉ trả về im lặng (đã gặp thực tế) nên lần sau phải lấy luồng mới.
       if (wave.stream && !wave.stopTimer) wave.stopTimer = setTimeout(() => { wave.stopTimer = 0; if (!waveWanted()) waveRelease(); }, 30000);
@@ -510,28 +519,30 @@
       const cur = wave.lvl[i];
       wave.lvl[i] = cur + (v - cur) * (v > cur ? up : down);
     }
-    waveDraw(wave.lvl.map((l) => 4 + l * 14));
+    const s = waveSlot();
+    if (s) waveDraw(s, wave.lvl.map((l) => 4 + l * 14));
   }
-  // 4 thanh vẽ trên canvas nhỏ: không đụng tới style/layout của trang nên rẻ hơn nhiều so với đổi height của DOM
-  const WAVE_W = 19.5, WAVE_H = 18, BAR_W = 3, BAR_GAP = 2.5;
-  function waveCanvas(cv) {
-    wave.cv = cv; wave.g = null; wave.hs = '';
+  // 4 thanh vẽ trên canvas nhỏ: không đụng tới style/layout của trang nên rẻ hơn nhiều so với đổi height của DOM.
+  // Hai chỗ vẽ: 'c' ở viên thuốc thu gọn, 'm' ở bảng nhạc; mỗi lúc chỉ vẽ vào chỗ đang hiện.
+  const WAVE_W = 19.5, WAVE_H = 18, BAR_W = 3, BAR_GAP = 2.5, WAVE_COLOR = '#c9b8ff'; // tím pastel
+  function waveCanvas(key, cv) {
+    const s = wave.slots[key] = { cv, g: null, hs: '' };
     if (!cv) return;
     const r = window.devicePixelRatio || 1;
     cv.width = Math.ceil(WAVE_W * r); cv.height = Math.ceil(WAVE_H * r);
-    wave.g = cv.getContext('2d');
-    wave.g.setTransform(r, 0, 0, r, 0, 0);
-    wave.g.fillStyle = '#ebebf0';
-    waveDraw([4, 4, 4, 4]);
+    s.g = cv.getContext('2d');
+    s.g.setTransform(r, 0, 0, r, 0, 0);
+    s.g.fillStyle = WAVE_COLOR;
+    waveDraw(s, [4, 4, 4, 4]);
   }
-  function waveDraw(hs) {
-    const g = wave.g;
-    if (!g) return;
+  function waveDraw(s, hs) {
+    const g = s.g;
+    if (!g || !s.cv.isConnected) return;
     const r = window.devicePixelRatio || 1;
     hs = hs.map((h) => Math.round(h * r * 2) / (r * 2)); // làm tròn nửa điểm ảnh thật
     const key = hs.join(',');
-    if (key === wave.hs) return; // không có gì đổi: không vẽ lại
-    wave.hs = key;
+    if (key === s.hs) return; // không có gì đổi: không vẽ lại
+    s.hs = key;
     g.clearRect(0, 0, WAVE_W, WAVE_H);
     g.beginPath();
     hs.forEach((h, i) => g.roundRect(i * (BAR_W + BAR_GAP), (WAVE_H - h) / 2, BAR_W, h, BAR_W / 2));
