@@ -433,7 +433,6 @@
         cc.innerHTML = `<div class="c-mid"><div class="mq">${item}${item}</div></div>`;
         const mid = $('.c-mid', cc);
         mqFit(mid);
-        mqRO.observe(mid); // viên thuốc đổi rộng (hover phóng to) thì đo lại
       } else cc.innerHTML = '';
       // Bên phải: sóng âm (thu gọn) và nút phát/tạm dừng (khi rê chuột) chồng lên nhau, đổi qua lại bằng CSS
       cr.innerHTML = tRun ? '<span class="c-timer" id="cTimer"></span>'
@@ -447,20 +446,23 @@
     syncWave();
   }
 
-  // Chữ chạy chỉ khi tên bài dài hơn khung. Tên ngắn mà vẫn chạy thì chỗ nối vòng lặp lộ ra trong khung,
-  // trông như chữ bị giật rồi hiện lại.
+  // Chữ chạy liền mạch cho mọi độ dài tên. Mỗi bản sao được độn khoảng trống để rộng ít nhất MQ_MIN
+  // (lớn hơn khung chữ cả lúc thu gọn ~260px lẫn lúc hover ~300px): chỗ nối vòng lặp luôn nằm ngoài khung.
+  // Trước đây tên ngắn hơn khung làm chỗ nối lộ ra trong khung, trông như chữ bị giật rồi hiện lại.
+  const MQ_MIN = 320, MQ_GAP = 44, MQ_SPEED = 32; // px, px, px/giây
   function mqFit(mid) {
     const mq = mid && mid.firstElementChild;
     if (!mq || !mq.isConnected) return;
-    const one = mq.firstElementChild;
-    const textW = one.offsetWidth - (parseFloat(getComputedStyle(one).paddingRight) || 0);
-    const boxW = mid.clientWidth - 8; // .c-mid có padding 4px mỗi bên
-    const run = isPlaying() && textW > boxW + 1;
-    if (run === mq.classList.contains('run')) return;
+    const items = [...mq.children];
+    const run = isPlaying();
     mq.classList.toggle('run', run);
-    if (run) mq.style.setProperty('--dur', Math.max(6, one.offsetWidth / 32).toFixed(1) + 's');
+    if (!run) { items.forEach((it) => { it.style.paddingRight = ''; }); return; }
+    const kids = items[0].children;
+    const textW = kids[kids.length - 1].getBoundingClientRect().right - kids[0].getBoundingClientRect().left;
+    const pad = Math.max(MQ_GAP, MQ_MIN - textW);
+    items.forEach((it) => { it.style.paddingRight = pad + 'px'; });
+    mq.style.setProperty('--dur', Math.max(6, (textW + pad) / MQ_SPEED).toFixed(1) + 's');
   }
-  const mqRO = new ResizeObserver((es) => es.forEach((e) => mqFit(e.target)));
 
   /* ----- Sóng âm thật: phân tích phổ âm thanh hệ thống (loopback) thành 4 dải tần ----- */
   async function waveStart() {
