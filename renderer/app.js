@@ -157,7 +157,13 @@
   }
   function collapseSoon(ms) {
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => { if (!S.hoverRaw && !S.typing && !drag) { S.hover = false; S.open = false; applyLayout(); } }, ms);
+    closeTimer = setTimeout(() => {
+      if (S.hoverRaw || S.typing || drag) return;
+      S.hover = false; S.open = false;
+      // Lần rê chuột sau mở lại bảng nhạc ở dạng gọn: đóng phần chọn thiết bị phát nếu còn mở
+      if (S.outOpen) { S.outOpen = false; musicSig = ''; renderMusic(); }
+      applyLayout();
+    }, ms);
   }
   api.onHover((v) => {
     S.hoverRaw = v;
