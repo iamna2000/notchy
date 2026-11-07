@@ -120,7 +120,7 @@
   function viewH() {
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) : 168;
-      case 'sys': return 268;
+      case 'sys': return 302;
       case 'calendar': return S.calMonth ? 414 : 272;
       case 'alarm': return 312;
       case 'clip': return 352;
@@ -576,36 +576,55 @@
   }
 
   /* ================= Hệ thống: CPU / RAM / GPU / Mạng ================= */
-  // Số liệu do main gửi mỗi giây, CHỈ khi tab này đang mở (đỡ tốn tài nguyên). Mỗi ô có biểu đồ 60 giây.
-  const ST_HIST = 60;
+  // Main ghi nền liên tục (1 giờ gần nhất). Mở tab: nhận toàn bộ lịch sử (statsHist) rồi mỗi giây một mẫu (stats).
+  // Biểu đồ vẽ theo thời gian thật của từng mẫu, chọn khoảng 1 phút / 10 phút / 1 giờ.
+  const ST_KEEP = 3600 * 1000;
+  const ST_RANGES = [[60, '1 phút'], [600, '10 phút'], [3600, '1 giờ']];
   const ST_TILES = [
     { k: 'cpu', name: 'CPU', color: '#64d2ff' },
     { k: 'ram', name: 'RAM', color: '#bf5af2' },
     { k: 'gpu', name: 'GPU', color: '#30d158' },
     { k: 'net', name: 'Mạng', color: '#ff9f0a' },
   ];
-  const st = { want: false, hist: { cpu: [], ram: [], gpu: [], net: [] } };
+  const st = { want: false, range: [60, 600, 3600].includes(store.get('strange', 600)) ? store.get('strange', 600) : 600, h: null, last: null };
   function syncStats() {
     const want = !winOff && island.dataset.mode === 'open' && S.tab === 'sys';
     if (want === st.want) return;
     st.want = want;
-    if (want) Object.keys(st.hist).forEach((k) => { st.hist[k] = []; }); // mở lại thì vẽ mới, không nối dữ liệu cũ
-    api.stats(want);
+    api.stats(want); // main gửi lại toàn bộ lịch sử khi mở
   }
   const fmtRate = (b) => (b == null ? '—' : b < 1048576 ? `${Math.round(b / 1024)} KB/s` : `${(b / 1048576).toFixed(b < 10485760 ? 1 : 0)} MB/s`);
   const fmtGB = (b, d) => (b / 1073741824).toFixed(d);
   function buildStats() {
     const g = $('#stGrid');
     if (g.childElementCount) return;
-    g.innerHTML = ST_TILES.map((t) => `
+    g.innerHTML = `<div class="st-range">${ST_RANGES.map(([r, n]) => `<button data-act="st-range" data-r="${r}">${n}</button>`).join('')}</div>`
+      + ST_TILES.map((t) => `
       <div class="st-tile" data-k="${t.k}" style="--c:${t.color}">
-        <div class="st-name">${t.name}</div>
+        <div class="st-name">${t.name}<span class="st-peak" id="st-${t.k}-p"></span></div>
         <div class="st-val" id="st-${t.k}-v">—</div>
         <div class="st-sub" id="st-${t.k}-s">&nbsp;</div>
         <canvas class="st-spark" id="st-${t.k}-c"></canvas>
       </div>`).join('');
+    markRange();
   }
-  function spark(k, color, vals, max) {
+  function markRange() { $$('.st-range button').forEach((b) => b.classList.toggle('on', +b.dataset.r === st.range)); }
+  // Điểm vẽ trong khoảng đang chọn. Nhiều mẫu hơn số cột điểm ảnh thì gộp theo cột, lấy giá trị CAO NHẤT
+  // (để không mất các đỉnh tải). Hai mẫu cách nhau > 15 giây (app không chạy) thì ngắt nét.
+  function sparkPoints(key, W, t0, span) {
+    const h = st.h, out = [];
+    let col = -1, cur = null;
+    for (let i = 0; i < h.t.length; i++) {
+      const t = h.t[i], v = h[key][i];
+      if (t < t0 || v == null) continue;
+      const c = Math.min(W - 1, Math.floor(((t - t0) / span) * W));
+      if (c === col && cur) { if (v > cur.v) cur.v = v; cur.t = t; continue; }
+      cur = { x: ((t - t0) / span) * W, v, t, gap: !!(out.length && t - out[out.length - 1].t > 15000) };
+      out.push(cur); col = c;
+    }
+    return out;
+  }
+  function spark(k, key, color, t0, span, max) {
     const cv = $(`#st-${k}-c`);
     if (!cv) return;
     const r = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
@@ -614,16 +633,42 @@
     const g = cv.getContext('2d');
     g.setTransform(r, 0, 0, r, 0, 0);
     g.clearRect(0, 0, W, H);
-    if (vals.length < 2) return;
-    const step = W / (ST_HIST - 1), x0 = W - (vals.length - 1) * step;
-    const y = (v) => H - 1 - Math.min(1, v / max) * (H - 2);
-    g.beginPath();
-    vals.forEach((v, i) => (i ? g.lineTo(x0 + i * step, y(v)) : g.moveTo(x0, y(v))));
-    g.strokeStyle = color; g.lineWidth = 1.5; g.lineJoin = 'round'; g.stroke();
-    g.lineTo(W, H); g.lineTo(x0, H); g.closePath();
+    const pts = sparkPoints(key, Math.round(W), t0, span);
+    if (pts.length < 2) return;
+    const y = (v) => H - 1 - Math.min(1, v / max) * (H - 3);
+    // Tách thành các đoạn liền (ngắt ở chỗ app không chạy)
+    const segs = [];
+    pts.forEach((p) => { if (!segs.length || p.gap) segs.push([]); segs[segs.length - 1].push(p); });
     const grad = g.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, color + '55'); grad.addColorStop(1, color + '00');
-    g.fillStyle = grad; g.fill();
+    segs.forEach((s) => {
+      if (s.length < 2) return;
+      g.beginPath();
+      s.forEach((p, i) => (i ? g.lineTo(p.x, y(p.v)) : g.moveTo(p.x, y(p.v))));
+      g.strokeStyle = color; g.lineWidth = 1.5; g.lineJoin = 'round'; g.stroke();
+      g.lineTo(s[s.length - 1].x, H); g.lineTo(s[0].x, H); g.closePath();
+      g.fillStyle = grad; g.fill();
+    });
+  }
+  function peakOf(key, t0) {
+    const h = st.h; let m = null;
+    for (let i = 0; i < h.t.length; i++) if (h.t[i] >= t0 && h[key][i] != null && (m == null || h[key][i] > m)) m = h[key][i];
+    return m;
+  }
+  function drawStats() {
+    if (!st.h || !st.h.t.length || !st.want) return;
+    buildStats();
+    const span = st.range * 1000, now = st.h.t[st.h.t.length - 1], t0 = now - span;
+    const pc = (v) => (v == null ? '' : `đỉnh ${Math.round(v * 100)}%`);
+    const netPeak = peakOf('down', t0);
+    $('#st-cpu-p').textContent = pc(peakOf('cpu', t0));
+    $('#st-ram-p').textContent = pc(peakOf('ram', t0));
+    $('#st-gpu-p').textContent = pc(peakOf('gpu', t0));
+    $('#st-net-p').textContent = netPeak == null ? '' : `đỉnh ${fmtRate(netPeak)}`;
+    ST_TILES.forEach((t) => {
+      const key = t.k === 'net' ? 'down' : t.k;
+      spark(t.k, key, t.color, t0, span, t.k === 'net' ? Math.max(1048576, netPeak || 0) * 1.15 : 1); // thang mạng co giãn theo đỉnh
+    });
   }
   function setTile(k, val, sub, hot) {
     const v = $(`#st-${k}-v`), s = $(`#st-${k}-s`);
@@ -631,19 +676,25 @@
     if (s.textContent !== sub) s.textContent = sub;
     v.classList.toggle('hot', !!hot);
   }
+  api.onStatsHist((h) => { if (h && h.t) { st.h = h; drawStats(); } });
   api.onStats((m) => {
     if (!m || !st.want) return;
     buildStats();
-    const push = (k, v) => { const h = st.hist[k]; h.push(v == null ? 0 : v); if (h.length > ST_HIST) h.shift(); };
+    // Thêm mẫu mới vào lịch sử (main gửi mẫu này sau khi đã gửi lịch sử)
+    const h = st.h || (st.h = { t: [], cpu: [], ram: [], gpu: [], down: [], up: [] });
     const ram = m.ramTotal ? m.ramUsed / m.ramTotal : null, gp = m.gpu;
-    push('cpu', m.cpu); push('ram', ram); push('gpu', gp ? gp.util / 100 : null); push('net', m.down);
+    if (!h.t.length || m.t > h.t[h.t.length - 1]) {
+      h.t.push(m.t); h.cpu.push(m.cpu); h.ram.push(ram); h.gpu.push(gp ? gp.util / 100 : null); h.down.push(m.down); h.up.push(m.up);
+      let cut = 0;
+      while (cut < h.t.length && h.t[cut] < m.t - ST_KEEP) cut++;
+      if (cut) Object.values(h).forEach((a) => a.splice(0, cut));
+    }
     setTile('cpu', m.cpu == null ? '—' : Math.round(m.cpu * 100) + '%', `${m.cores} luồng`, m.cpu > 0.85);
     setTile('ram', ram == null ? '—' : Math.round(ram * 100) + '%', `${fmtGB(m.ramUsed, 1)} / ${fmtGB(m.ramTotal, 0)} GB`, ram > 0.85);
     if (gp) setTile('gpu', Math.round(gp.util) + '%', [gp.temp != null ? Math.round(gp.temp) + '°C' : '', `${(gp.memUsed / 1024).toFixed(1)}/${Math.round(gp.memTotal / 1024)} GB`, gp.power != null ? Math.round(gp.power) + ' W' : ''].filter(Boolean).join(' · '), gp.util > 85);
     else setTile('gpu', '—', 'Không đọc được GPU');
     setTile('net', '↓ ' + fmtRate(m.down), `↑ ${fmtRate(m.up)} · ${m.ping == null ? 'mất mạng?' : Math.round(m.ping) + ' ms'}`);
-    const netMax = Math.max(1048576, ...st.hist.net) * 1.15; // thang mạng tự co giãn theo đỉnh trong 60 giây
-    ST_TILES.forEach((t) => spark(t.k, t.color, st.hist[t.k], t.k === 'net' ? netMax : 1));
+    drawStats();
   });
 
   /* ================= Lịch + ghi chú ================= */
@@ -1059,6 +1110,7 @@
       // Nhạc
       case 'm-play': m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
       case 'm-focus': api.media('focus'); break;
+      case 'st-range': st.range = +el.dataset.r; store.set('strange', st.range); markRange(); drawStats(); break;
       case 'c-open': if (S.hover) { S.open = true; applyLayout(); requestSys(); } break;
       case 'm-next': api.media('next'); break;
       case 'm-prev': api.media('prev'); break;

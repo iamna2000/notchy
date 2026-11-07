@@ -197,6 +197,12 @@ input::placeholder { color: var(--label3); }
 
 /* ================== Hệ thống: 4 ô CPU / RAM / GPU / Mạng ================== */
 .st-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+/* Chọn khoảng thời gian của biểu đồ (kiểu segmented control) */
+.st-range { grid-column: 1 / -1; justify-self: end; display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--g1); margin-bottom: -2px; }
+.st-range button { height: 22px; padding: 0 10px; border-radius: 7px; font-size: 11px; font-weight: 600; color: var(--label2); }
+.st-range button:hover { color: #fff; }
+.st-range button.on { background: var(--g3); color: #fff; }
+.st-peak { margin-left: auto; font-size: 10px; font-weight: 500; color: var(--label3); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .st-tile { position: relative; height: 92px; padding: 10px 12px 0; border-radius: 16px; background: var(--g1); overflow: hidden; }
 .st-name { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--label2); letter-spacing: .02em; }
 .st-name::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: var(--c); }

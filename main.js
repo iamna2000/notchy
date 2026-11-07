@@ -237,9 +237,15 @@ function ensureSys() {
 }
 
 // ---------- Theo dõi hệ thống (tab Hệ thống) ----------
-// Chỉ chạy khi tab đang mở. CPU/RAM: Node; GPU: nvidia-smi chạy liên tục (-lms); mạng: lệnh 'net' của
-// system.ps1; độ trễ: thời gian bắt tay TCP tới 1.1.1.1:443 (không cần quyền ICMP, không phụ thuộc ngôn ngữ).
-const stats = { on: false, timer: null, gpuProc: null, gpu: null, gpuOk: true, cpuPrev: null, netPrev: null, down: null, up: null, ping: null, tick: 0 };
+// Ghi nền liên tục để biểu đồ có lịch sử thật: mỗi 2 giây (1 giây khi tab đang mở), giữ 1 giờ gần nhất.
+// CPU/RAM: Node; GPU: nvidia-smi chạy liên tục (-lms); mạng: lệnh 'net' của system.ps1;
+// độ trễ: thời gian bắt tay TCP tới 1.1.1.1:443 (không cần quyền ICMP, không phụ thuộc ngôn ngữ).
+const HIST_MS = 3600 * 1000;
+const stats = {
+  on: false, live: false, timer: null, gpuProc: null, gpu: null, gpuOk: true, cpuPrev: null, netPrev: null,
+  down: null, up: null, ping: null, pingAt: 0,
+  hist: { t: [], cpu: [], ram: [], gpu: [], down: [], up: [] },
+};
 function cpuTimes() {
   let idle = 0, total = 0;
   for (const c of os.cpus()) { const t = c.times; idle += t.idle; total += t.user + t.nice + t.sys + t.idle + t.irq; }
@@ -277,29 +283,52 @@ function measurePing() {
   s.once('error', () => done(null));
 }
 function statsTick() {
+  const now = Date.now();
   const c = cpuTimes(), p = stats.cpuPrev;
   const cpu = p && c.total > p.total ? Math.max(0, Math.min(1, 1 - (c.idle - p.idle) / (c.total - p.total))) : null;
   stats.cpuPrev = c;
   ensureSys(); writeProc(sysProc, 'net');
-  if (stats.tick++ % 2 === 0) measurePing();
-  const total = os.totalmem();
-  send('stats', {
-    cpu, cores: os.cpus().length,
-    ramUsed: total - os.freemem(), ramTotal: total,
-    gpu: stats.gpu, down: stats.down, up: stats.up, ping: stats.ping,
-  });
+  if (now - stats.pingAt >= (stats.live ? 2000 : 10000)) { stats.pingAt = now; measurePing(); }
+  if (stats.gpuOk && !stats.gpuProc) startGpu(); // nvidia-smi bị tắt ngang thì bật lại
+  const total = os.totalmem(), ramUsed = total - os.freemem(), g = stats.gpu;
+  // Ghi lịch sử (giá trị 0..1, mạng là byte/giây), bỏ phần cũ hơn 1 giờ
+  const h = stats.hist;
+  h.t.push(now); h.cpu.push(cpu); h.ram.push(ramUsed / total); h.gpu.push(g ? g.util / 100 : null);
+  h.down.push(stats.down); h.up.push(stats.up);
+  let cut = 0;
+  while (cut < h.t.length && h.t[cut] < now - HIST_MS) cut++;
+  if (cut) Object.values(h).forEach((a) => a.splice(0, cut));
+  if (stats.live) {
+    send('stats', {
+      t: now, cpu, cores: os.cpus().length, ramUsed, ramTotal: total,
+      gpu: g, down: stats.down, up: stats.up, ping: stats.ping,
+    });
+  }
+}
+function statsLoop() {
+  try { statsTick(); } catch (e) { log('stats:', e.message); }
+  stats.timer = setTimeout(statsLoop, stats.live ? 1000 : 2000);
 }
 function startStats() {
   if (stats.on) return;
-  stats.on = true; stats.cpuPrev = cpuTimes(); stats.netPrev = null; stats.down = stats.up = null; stats.tick = 0;
+  stats.on = true; stats.cpuPrev = cpuTimes();
   startGpu();
   ensureSys(); writeProc(sysProc, 'net');
-  stats.timer = setInterval(statsTick, 1000);
+  stats.timer = setTimeout(statsLoop, 1000);
 }
 function stopStats() {
   stats.on = false;
-  clearInterval(stats.timer); stats.timer = null;
+  clearTimeout(stats.timer); stats.timer = null;
   stopProc(stats.gpuProc); stats.gpuProc = null;
+}
+// Tab Hệ thống mở: gửi toàn bộ lịch sử một lần rồi cập nhật mỗi giây; đóng: quay về ghi nền 2 giây
+function setStatsLive(on) {
+  if (!stats.on) startStats();
+  stats.live = !!on;
+  if (on) {
+    send('statsHist', stats.hist);
+    clearTimeout(stats.timer); statsLoop();
+  }
 }
 
 // ---------- Bảng tạm ----------
@@ -501,6 +530,7 @@ function start() {
   createWindow();
   buildTray();
   startMedia();
+  startStats(); // ghi nền lịch sử CPU/RAM/GPU/mạng cho tab Hệ thống
   readDnd();
   watchDownloads();
   setInterval(pollCursor, 50);
@@ -582,4 +612,4 @@ ipcMain.on('shelf-drag', (e, id) => {
   try { e.sender.startDrag({ file: it.path, icon }); } catch (err) { log('shelf drag:', err.message); }
 });
 ipcMain.on('notice', () => { peekUntil = Date.now() + 4200; });
-ipcMain.on('stats', (_e, on) => { if (on) startStats(); else stopStats(); });
+ipcMain.on('stats', (_e, on) => setStatsLive(on));
