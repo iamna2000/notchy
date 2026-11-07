@@ -52,6 +52,14 @@ input::placeholder { color: var(--label3); }
 .compact { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 13px; font-weight: 600; transition: opacity .25s ease .2s, filter .25s ease .2s; }
 .island:not([data-mode="compact"]):not([data-mode="hover"]) .compact { opacity: 0; filter: blur(6px); transition-delay: 0s; pointer-events: none; }
 .c-center { margin: 0 auto; font-variant-numeric: tabular-nums; letter-spacing: .01em; min-width: 0; }
+/* Không phát gì: lưới 3 cột để giờ luôn đúng chính giữa (ngày trái, thời tiết phải) */
+.compact.idle { display: grid; grid-template-columns: 1fr auto 1fr; padding: 0 14px; }
+.compact.idle .c-left { justify-self: start; }
+.compact.idle .c-right { justify-self: end; }
+.c-date { font-size: 12px; font-weight: 600; color: var(--label2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-wx { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.c-wx svg { width: 17px; height: 17px; flex: none; }
+.c-wx b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .compact.extras:not(.music) .c-center { display: none; }
 .compact.music .c-center { flex: 1; margin: 0; overflow: hidden; display: flex; justify-content: center; }
 .compact.music { padding: 0 14px 0 8px; }

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
   onWinVis: (cb) => on('winvis', (v) => cb(!!v)),
   onStats: (cb) => on('stats', cb),
   onStatsHist: (cb) => on('statsHist', cb),
+  onWeather: (cb) => on('weather', cb),
+  weatherGet: () => ipcRenderer.send('weather-get'),
   stats: (v) => ipcRenderer.send('stats', !!v),
   onMedia: (cb) => on('media', cb),
   onSys: (cb) => on('sys', cb),

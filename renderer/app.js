@@ -134,7 +134,8 @@
     if (S.peek || S.typing || (S.hover && (S.open || !hasMusic()))) return { mode: 'open', w: 480, h: viewH(), r: 40, ear: 18 };
     if (S.hover) return { mode: 'hover', w: 400, h: 56, r: 26, ear: 12 };
     if (S.notice) return { mode: 'notice', w: 340, h: 60, r: 30, ear: 15 };
-    let c = { w: 156, h: 34, r: 17, ear: 9 };
+    // Không phát gì: rộng ra để chứa ngày · giờ · thời tiết
+    let c = { w: wxFresh() ? 236 : 196, h: 34, r: 17, ear: 9 };
     if (hasMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
     else if (S.timer.running) c = { w: 210, h: 34, r: 17, ear: 9 };
     // Khi ẩn: thanh Home kiểu iPhone (bo tròn hết, cách mép trên 3px; xem CSS)
@@ -415,6 +416,40 @@
     el.querySelectorAll('.v').forEach((v) => { v.textContent = txt; });
   }
 
+  /* ================= Thời tiết (viên thuốc thu gọn khi không phát gì) ================= */
+  // Icon nhiều màu kiểu thời tiết của Apple; chọn theo mã thời tiết WMO của Open-Meteo
+  const WX_SVG = (inner) => `<svg viewBox="0 0 24 24">${inner}</svg>`;
+  const WX_CLOUD = (y = 0, fill = '#e5e5ea') => `<path transform="translate(0 ${y})" fill="${fill}" d="M7.2 18.5h10.1a3.9 3.9 0 0 0 .5-7.77 5.3 5.3 0 0 0-10.2-1.1A4.45 4.45 0 0 0 7.2 18.5z"/>`;
+  const WX_SUNRAYS = (cx, cy, r, len) => Array.from({ length: 8 }, (_, i) => { const a = (i * Math.PI) / 4, c = Math.cos(a), s = Math.sin(a); return `M${(cx + c * r).toFixed(2)} ${(cy + s * r).toFixed(2)}L${(cx + c * (r + len)).toFixed(2)} ${(cy + s * (r + len)).toFixed(2)}`; }).join('');
+  const WX = {
+    sun: WX_SVG(`<circle cx="12" cy="12" r="4.6" fill="#ffd60a"/><path d="${WX_SUNRAYS(12, 12, 6.8, 2.6)}" stroke="#ffd60a" stroke-width="1.9" stroke-linecap="round"/>`),
+    moon: WX_SVG('<path fill="#e8e4ff" d="M19.6 14.6A8 8 0 0 1 9.4 4.4a8 8 0 1 0 10.2 10.2z"/>'),
+    sunCloud: WX_SVG(`<circle cx="9" cy="8.6" r="3.6" fill="#ffd60a"/><path d="${WX_SUNRAYS(9, 8.6, 5.3, 1.9)}" stroke="#ffd60a" stroke-width="1.6" stroke-linecap="round"/>${WX_CLOUD(1.4)}`),
+    moonCloud: WX_SVG(`<path fill="#e8e4ff" d="M14.6 10.4A5.4 5.4 0 0 1 7.6 3.4a5.4 5.4 0 1 0 7 7z"/>${WX_CLOUD(1.4)}`),
+    cloud: WX_SVG(WX_CLOUD(0.6)),
+    fog: WX_SVG(`${WX_CLOUD(-3, '#c7c7cc')}<path d="M5 18.2h14M7.5 21h9" stroke="#c7c7cc" stroke-width="1.8" stroke-linecap="round"/>`),
+    rain: WX_SVG(`${WX_CLOUD(-3.2)}<path d="M8.6 17.8l-1 2.6M12.4 17.8l-1 2.6M16.2 17.8l-1 2.6" stroke="#64d2ff" stroke-width="1.9" stroke-linecap="round"/>`),
+    storm: WX_SVG(`${WX_CLOUD(-3.2)}<path fill="#ffd60a" d="M12.6 15.2l-3.1 4.3h2.4l-1 3.3 3.6-4.6h-2.5l1.3-3z"/>`),
+    snow: WX_SVG(`${WX_CLOUD(-3.2)}<g fill="#f2f2f7"><circle cx="7.6" cy="19.4" r="1.45"/><circle cx="12" cy="21.4" r="1.45"/><circle cx="16.4" cy="19.4" r="1.45"/></g>`),
+  };
+  function wxIcon(code, day) {
+    if (code === 0 || code === 1) return day ? WX.sun : WX.moon;
+    if (code === 2) return day ? WX.sunCloud : WX.moonCloud;
+    if (code === 3) return WX.cloud;
+    if (code === 45 || code === 48) return WX.fog;
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return WX.snow;
+    if (code >= 95) return WX.storm;
+    if (code >= 51 && code <= 82) return WX.rain;
+    return WX.cloud;
+  }
+  const WX_NAME = (c) => (c <= 1 ? 'Trời quang' : c === 2 ? 'Ít mây' : c === 3 ? 'Nhiều mây' : c === 45 || c === 48 ? 'Sương mù'
+    : c >= 95 ? 'Dông' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'Tuyết' : c >= 80 ? 'Mưa rào' : c >= 61 ? 'Mưa' : c >= 51 ? 'Mưa phùn' : 'Nhiều mây');
+  // Dữ liệu quá 2 giờ (mất mạng lâu) thì không hiện, tránh hiện thời tiết cũ
+  const wxFresh = () => !!(S.weather && Date.now() - S.weather.at < 2 * 3600000);
+  api.onWeather((w) => { S.weather = w || null; compactSig = ''; renderCompact(); applyLayout(); });
+  api.weatherGet();
+  const VN_DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
   /* ================= Thu gọn ================= */
   let compactSig = '';
   function renderCompact() {
@@ -424,9 +459,20 @@
     compactEl.classList.toggle('extras', extras);
     compactEl.classList.toggle('music', music);
     const cc = $('#cCenter'), cl = $('#cLeft'), cr = $('#cRight');
+    // Không phát gì: ngày (trái) · giờ (giữa) · thời tiết (phải)
+    compactEl.classList.toggle('idle', !extras);
     if (!extras) {
       cc.textContent = fmtClock(now);
-      if (compactSig !== 'idle') { compactSig = 'idle'; cl.innerHTML = ''; cr.innerHTML = ''; }
+      const w = wxFresh() ? S.weather : null;
+      const date = `${VN_DOW[now.getDay()]} ${now.getDate()}/${now.getMonth() + 1}`;
+      const sig = ['idle', date, w ? `${Math.round(w.temp)}|${w.code}|${w.day}` : ''].join('|');
+      if (compactSig !== sig) {
+        compactSig = sig;
+        cl.innerHTML = `<span class="c-date">${date}</span>`;
+        cr.innerHTML = w
+          ? `<span class="c-wx" title="${esc([w.city, WX_NAME(w.code), w.hi != null ? `Cao ${Math.round(w.hi)}° · Thấp ${Math.round(w.lo)}°` : ''].filter(Boolean).join(' · '))}">${wxIcon(w.code, w.day)}<b>${Math.round(w.temp)}°</b></span>`
+          : '';
+      }
       return;
     }
     const sig = [music, tRun, music ? (S.media.thumb || '').length : 0, isPlaying(), music ? S.media.title + S.media.artist : ''].join('|');

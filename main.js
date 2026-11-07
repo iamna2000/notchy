@@ -374,6 +374,46 @@ function stopStats() {
   clearTimeout(stats.timer); stats.timer = null;
   stopProc(stats.gpuProc); stats.gpuProc = null;
 }
+// ---------- Thời tiết (viên thuốc thu gọn khi không phát gì) ----------
+// Vị trí đoán theo IP (ipwho.is), lưu lại 1 ngày; thời tiết từ Open-Meteo, cập nhật mỗi 15 phút.
+// Cả hai miễn phí, không cần khóa. Tắt được trong menu ("Hiện thời tiết").
+const weather = { data: null, timer: null, failLogged: false };
+const weatherOn = () => loadSettings().weather !== false;
+async function weatherLocation() {
+  const s = loadSettings();
+  if (s.weatherLoc && Date.now() - s.weatherLoc.at < 86400000) return s.weatherLoc;
+  const j = await (await fetch('https://ipwho.is/?fields=success,city,latitude,longitude', { signal: AbortSignal.timeout(8000) })).json();
+  if (!j.success || !Number.isFinite(j.latitude)) throw new Error('không xác định được vị trí');
+  const loc = { lat: j.latitude, lon: j.longitude, city: j.city || '', at: Date.now() };
+  const s2 = loadSettings(); s2.weatherLoc = loc; saveSettings(s2);
+  return loc;
+}
+async function refreshWeather() {
+  clearTimeout(weather.timer); weather.timer = null;
+  if (!weatherOn()) { weather.data = null; send('weather', null); return; }
+  let next = 15 * 60000;
+  try {
+    const loc = await weatherLocation();
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}`
+      + '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1';
+    const j = await (await fetch(url, { signal: AbortSignal.timeout(10000) })).json();
+    const c = j.current;
+    if (!c || !Number.isFinite(c.temperature_2m)) throw new Error('dữ liệu thời tiết không hợp lệ');
+    weather.data = {
+      temp: c.temperature_2m, code: c.weather_code, day: !!c.is_day, city: loc.city,
+      hi: j.daily && j.daily.temperature_2m_max ? j.daily.temperature_2m_max[0] : null,
+      lo: j.daily && j.daily.temperature_2m_min ? j.daily.temperature_2m_min[0] : null,
+      at: Date.now(),
+    };
+    weather.failLogged = false;
+    send('weather', weather.data);
+  } catch (e) {
+    if (!weather.failLogged) { log('weather:', e.message); weather.failLogged = true; } // mất mạng: chỉ ghi 1 lần
+    next = 5 * 60000;
+  }
+  if (weatherOn()) weather.timer = setTimeout(refreshWeather, next);
+}
+
 // Tab Hệ thống mở: gửi toàn bộ lịch sử một lần rồi cập nhật mỗi giây; đóng: quay về ghi nền 2 giây
 function setStatsLive(on) {
   if (!stats.on) startStats();
@@ -531,6 +571,7 @@ function buildMenu() {
         label: `Sau ${v} giây`, type: 'radio', checked: hideMode === 'idle' && idleSec === v, click: () => setHide('idle', v),
       })),
     ] },
+    { label: 'Hiện thời tiết', type: 'checkbox', checked: weatherOn(), click: (i) => { const s = loadSettings(); s.weather = i.checked; saveSettings(s); refreshWeather(); } },
     { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
     { type: 'separator' },
     { label: 'Khởi động lại', click: () => { app.relaunch(); app.quit(); } },
@@ -587,6 +628,9 @@ function start() {
   buildTray();
   startMedia();
   startStats(); // ghi nền lịch sử CPU/RAM/GPU/mạng cho tab Hệ thống
+  refreshWeather();
+  // Máy thức dậy sau khi ngủ: cập nhật thời tiết ngay (dữ liệu cũ có thể đã lâu)
+  try { require('electron').powerMonitor.on('resume', () => setTimeout(refreshWeather, 5000)); } catch (_) {}
   readDnd();
   watchDownloads();
   setInterval(pollCursor, 50);
@@ -673,3 +717,4 @@ ipcMain.on('shelf-drag', (e, id) => {
 });
 ipcMain.on('notice', () => { peekUntil = Date.now() + 4200; });
 ipcMain.on('stats', (_e, on) => setStatsLive(on));
+ipcMain.on('weather-get', () => send('weather', weather.data));
