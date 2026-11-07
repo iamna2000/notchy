@@ -108,6 +108,8 @@
   // Sóng âm ở viên thuốc (xem waveStart/syncWave bên dưới). Khai báo sớm vì applyLayout gọi syncWave.
   const BANDS = [[60, 250], [250, 1000], [1000, 4000], [4000, 12000]]; // trầm, trung trầm, trung cao, cao
   const BAND_GAIN = [0.9, 1.0, 1.25, 1.7];                            // dải cao vốn nhỏ hơn: nâng lên cho đều
+  const WAVE_COLOR = '#c9b8ff'; // tím pastel: màu sóng âm khi không có ảnh bìa
+  let waveColor = WAVE_COLOR;   // đổi theo tông màu ảnh bìa (setAccent -> setWaveColor)
   const wave = { slots: {}, stream: null, ctx: null, an: null, data: null, raf: 0, lvl: [0, 0, 0, 0], last: 0, starting: false, stopTimer: 0, failed: false };
   let winOff = false;
   // Chỗ vẽ sóng đang hiện: viên thuốc thu gọn, hoặc bảng nhạc khi mở rộng; null nếu không chỗ nào hiện
@@ -214,7 +216,7 @@
 
   /* ================= Nhạc ================= */
   function setAccent(url) {
-    if (!url) { island.style.removeProperty('--accent'); return; }
+    if (!url) { island.style.removeProperty('--accent'); setWaveColor(WAVE_COLOR); return; }
     const img = new Image();
     img.onload = () => {
       try {
@@ -233,8 +235,11 @@
         const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
         let h = 0; const dl = mx - mn;
         if (dl > 0) { if (mx === r / 255) h = ((g - b) / 255 / dl) % 6; else if (mx === g / 255) h = (b - r) / 255 / dl + 2; else h = (r - g) / 255 / dl + 4; h *= 60; if (h < 0) h += 360; }
-        const s = clamp(dl / (1 - Math.abs(mx + mn - 1) || 1), 0.35, 0.75);
+        const sRaw = dl / (1 - Math.abs(mx + mn - 1) || 1);
+        const s = clamp(sRaw, 0.35, 0.75);
         island.style.setProperty('--accent', `hsl(${Math.round(h)} ${Math.round(s * 100)}% 68%)`);
+        // Sóng âm: cùng tông ảnh bìa nhưng sáng/nhạt hơn (pastel); ảnh gần như không màu thì dùng xám sáng
+        setWaveColor(sRaw < 0.08 ? '#e5e5ea' : `hsl(${Math.round(h)} ${Math.round(clamp(sRaw, 0.45, 0.85) * 100)}% 78%)`);
       } catch (_) {}
     };
     img.src = url;
@@ -532,7 +537,19 @@
   }
   // 4 thanh vẽ trên canvas nhỏ: không đụng tới style/layout của trang nên rẻ hơn nhiều so với đổi height của DOM.
   // Hai chỗ vẽ: 'c' ở viên thuốc thu gọn, 'm' ở bảng nhạc; mỗi lúc chỉ vẽ vào chỗ đang hiện.
-  const WAVE_W = 19.5, WAVE_H = 18, BAR_W = 3, BAR_GAP = 2.5, WAVE_COLOR = '#c9b8ff'; // tím pastel
+  const WAVE_W = 19.5, WAVE_H = 18, BAR_W = 3, BAR_GAP = 2.5;
+  // Đổi màu sóng âm (theo ảnh bìa) và vẽ lại ngay ở mọi chỗ vẽ
+  function setWaveColor(c) {
+    if (c === waveColor) return;
+    waveColor = c;
+    Object.values(wave.slots).forEach((s) => {
+      if (!s.g) return;
+      s.g.fillStyle = c;
+      const hs = s.hs ? s.hs.split(',').map(Number) : [4, 4, 4, 4];
+      s.hs = '';
+      waveDraw(s, hs);
+    });
+  }
   function waveCanvas(key, cv) {
     const s = wave.slots[key] = { cv, g: null, hs: '' };
     if (!cv) return;
@@ -540,7 +557,7 @@
     cv.width = Math.ceil(WAVE_W * r); cv.height = Math.ceil(WAVE_H * r);
     s.g = cv.getContext('2d');
     s.g.setTransform(r, 0, 0, r, 0, 0);
-    s.g.fillStyle = WAVE_COLOR;
+    s.g.fillStyle = waveColor;
     waveDraw(s, [4, 4, 4, 4]);
   }
   function waveDraw(s, hs) {
