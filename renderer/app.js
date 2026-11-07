@@ -99,6 +99,11 @@
   let closeTimer = null, peekTimer = null;
 
   const hasMusic = () => !!(S.media.active && S.media.title && (S.media.status === 'Playing' || S.media.status === 'Paused'));
+  // Viên thuốc thu gọn chỉ hiện nhạc khi đang phát, hoặc vừa tạm dừng < 60 giây (tạm dừng rồi phát lại không
+  // làm viên thuốc nhảy qua lại). Tạm dừng lâu thì về ngày · giờ · thời tiết; bảng nhạc vẫn giữ bài đang dừng.
+  const PAUSE_KEEP = 60000;
+  let lastPlayingAt = 0; // lần cuối thấy đang phát (mở app khi nhạc đã dừng sẵn thì = 0 -> hiện ngày giờ ngay)
+  const compactMusic = () => hasMusic() && (S.media.status === 'Playing' || (lastPlayingAt > 0 && Date.now() - lastPlayingAt < PAUSE_KEEP));
   const isPlaying = () => S.media.active && S.media.status === 'Playing';
 
   // Sóng âm ở viên thuốc (xem waveStart/syncWave bên dưới). Khai báo sớm vì applyLayout gọi syncWave.
@@ -131,12 +136,12 @@
   function target() {
     if (S.ring) return { mode: 'ring', w: 440, h: 186, r: 40, ear: 16 };
     // Đang có nhạc: rê chuột chỉ phóng to viên thuốc (nút tạm dừng), bấm vào mới mở bảng đầy đủ
-    if (S.peek || S.typing || (S.hover && (S.open || !hasMusic()))) return { mode: 'open', w: 480, h: viewH(), r: 40, ear: 18 };
+    if (S.peek || S.typing || (S.hover && (S.open || !compactMusic()))) return { mode: 'open', w: 480, h: viewH(), r: 40, ear: 18 };
     if (S.hover) return { mode: 'hover', w: 400, h: 56, r: 26, ear: 12 };
     if (S.notice) return { mode: 'notice', w: 340, h: 60, r: 30, ear: 15 };
     // Không phát gì: rộng ra để chứa ngày · giờ · thời tiết
     let c = { w: wxFresh() ? 236 : 196, h: 34, r: 17, ear: 9 };
-    if (hasMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
+    if (compactMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
     else if (S.timer.running) c = { w: 210, h: 34, r: 17, ear: 9 };
     // Khi ẩn: thanh Home kiểu iPhone (bo tròn hết, cách mép trên 3px; xem CSS)
     if (S.hidden) return { mode: 'hidden', w: 100, h: 4, r: 2, ear: 0 };
@@ -277,6 +282,7 @@
         if (same && now - cmdAt < 900 && status !== prev.status) { status = prev.status; pos = prev.pos; base = prev.base; }
         const thumb = m.thumb !== undefined ? m.thumb : (same ? prev.thumb : '');
         S.media = { active: true, key: m.key, title: m.title, artist: m.artist, album: m.album, app: m.app, status, pos, base, dur: m.live ? 0 : m.dur, live: !!m.live, rate: m.rate || 1, shuffle: !!m.shuffle, seekAt, cmdAt, thumb };
+        if (status === 'Playing') lastPlayingAt = now; else if (!same) lastPlayingAt = 0;
         if (thumb !== (prev.thumb || '')) setAccent(thumb);
       }
     } else if (m.type === 'error') {
@@ -454,7 +460,7 @@
   let compactSig = '';
   function renderCompact() {
     const now = new Date();
-    const music = hasMusic(), tRun = S.timer.running, extras = music || tRun;
+    const music = compactMusic(), tRun = S.timer.running, extras = music || tRun;
     island.classList.toggle('playing', isPlaying()); // dùng cho vệt sáng khi ẩn
     compactEl.classList.toggle('extras', extras);
     compactEl.classList.toggle('music', music);
@@ -1154,7 +1160,7 @@
     const T = S.timer, m = S.media;
     switch (a) {
       // Nhạc
-      case 'm-play': m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
+      case 'm-play': if (m.status === 'Playing') lastPlayingAt = Date.now(); m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
       case 'm-focus': api.media('focus'); break;
       case 'st-range': st.range = +el.dataset.r; store.set('strange', st.range); markRange(); drawStats(); break;
       case 'c-open': if (S.hover) { S.open = true; applyLayout(); requestSys(); } break;
