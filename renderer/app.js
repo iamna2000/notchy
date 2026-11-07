@@ -141,7 +141,8 @@
     let c = { w: 156, h: 34, r: 17, ear: 9 };
     if (hasMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
     else if (S.timer.running) c = { w: 210, h: 34, r: 17, ear: 9 };
-    if (S.hidden) return { mode: 'hidden', w: 56, h: 4, r: 3, ear: 0 };
+    // Khi ẩn: viên thuốc đen thu nhỏ có tai (Mini Island) hoặc thanh Home kiểu iPhone (bo tròn hết, xem CSS)
+    if (S.hidden) return S.flags.hideStyle === 'home' ? { mode: 'hidden', w: 96, h: 5, r: 2.5, ear: 0 } : { mode: 'hidden', w: 84, h: 7, r: 3.5, ear: 4 };
     return Object.assign(c, { mode: 'compact' });
   }
   function applyLayout() {
@@ -421,6 +422,7 @@
   function renderCompact() {
     const now = new Date();
     const music = hasMusic(), tRun = S.timer.running, extras = music || tRun;
+    island.classList.toggle('playing', isPlaying()); // dùng cho vệt sáng khi ẩn
     compactEl.classList.toggle('extras', extras);
     compactEl.classList.toggle('music', music);
     const cc = $('#cCenter'), cl = $('#cLeft'), cr = $('#cRight');
@@ -542,6 +544,7 @@
   function setWaveColor(c) {
     if (c === waveColor) return;
     waveColor = c;
+    island.style.setProperty('--wave', c); // vệt sáng khi ẩn dùng chung màu
     Object.values(wave.slots).forEach((s) => {
       if (!s.g) return;
       s.g.fillStyle = c;
@@ -870,8 +873,14 @@
     const laps = S.sw.laps;
     $('#swLaps').innerHTML = laps.slice(-3).reverse().map((t, i) => { const n = laps.length - i, prev = laps[n - 2] || 0; return `<div><span>Vòng ${n}</span><span>${fmtSW(t - prev)}</span></div>`; }).join('');
   }
-  api.onFlags((f) => { if (f) { S.flags = Object.assign(S.flags, f); renderIcRow(); } });
-  Promise.resolve(api.flags()).then((f) => { if (f) { S.flags = Object.assign(S.flags, f); renderIcRow(); } }).catch(() => {});
+  function applyFlags(f) {
+    if (!f) return;
+    S.flags = Object.assign(S.flags, f);
+    island.dataset.hs = S.flags.hideStyle || 'island';
+    renderIcRow(); applyLayout();
+  }
+  api.onFlags(applyFlags);
+  Promise.resolve(api.flags()).then(applyFlags).catch(() => {});
 
   /* ================= Chuông báo ================= */
   let audioCtx = null, soundIv = null, ringTimeout = null;
