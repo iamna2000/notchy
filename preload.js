@@ -1,0 +1,38 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+const on = (ch, cb) => ipcRenderer.on(ch, (_e, v) => cb(v));
+
+contextBridge.exposeInMainWorld('api', {
+  onHover: (cb) => on('hover', (v) => cb(!!v)),
+  onHidden: (cb) => on('hidden', (v) => cb(!!v)),
+  onMedia: (cb) => on('media', cb),
+  onSys: (cb) => on('sys', cb),
+  onClip: (cb) => on('clip', cb),
+  onFlags: (cb) => on('flags', cb),
+  onPeek: (cb) => ipcRenderer.on('peek', () => cb()),
+  onShelf: (cb) => on('shelf', cb),
+  onToast: (cb) => on('toast', cb),
+  size: (w, h) => ipcRenderer.send('island-size', { w, h }),
+  media: (cmd) => ipcRenderer.send('media-cmd', String(cmd)),
+  sys: (cmd) => ipcRenderer.send('sys-cmd', String(cmd)),
+  alert: (v) => ipcRenderer.send('alert', !!v),
+  hold: (v) => ipcRenderer.send('hold', !!v),
+  typing: (v) => ipcRenderer.send('typing', !!v),
+  clipGet: () => ipcRenderer.send('clip-get'),
+  clipPaste: (id) => ipcRenderer.send('clip-paste', String(id)),
+  clipPin: (id) => ipcRenderer.send('clip-pin', String(id)),
+  clipDel: (id) => ipcRenderer.send('clip-del', String(id)),
+  clipClear: () => ipcRenderer.send('clip-clear'),
+  toggle: (name, v) => ipcRenderer.send('toggle', String(name), !!v),
+  flags: () => ipcRenderer.invoke('flags'),
+  pathOf: (f) => { try { return webUtils.getPathForFile(f) || ''; } catch (_) { return ''; } },
+  shelfGet: () => ipcRenderer.send('shelf-get'),
+  shelfAdd: (paths) => ipcRenderer.send('shelf-add', Array.isArray(paths) ? paths.map(String) : []),
+  shelfDel: (id) => ipcRenderer.send('shelf-del', String(id)),
+  shelfClear: () => ipcRenderer.send('shelf-clear'),
+  shelfOpen: (id) => ipcRenderer.send('shelf-open', String(id)),
+  shelfDrag: (id) => ipcRenderer.send('shelf-drag', String(id)),
+  notice: () => ipcRenderer.send('notice'),
+  menu: () => ipcRenderer.send('menu'),
+  openSound: () => ipcRenderer.send('open-sound'),
+});

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'" />
+<title>Dynamic Island</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="stage">
+  <div class="island" id="island" data-mode="compact">
+    <div class="ear l"></div>
+    <div class="ear r"></div>
+    <div class="shell">
+
+      <!-- ===== Thu gọn ===== -->
+      <div class="compact" id="compact">
+        <div class="c-left" id="cLeft"></div>
+        <div class="c-center" id="cCenter">--:--</div>
+        <div class="c-right" id="cRight"></div>
+      </div>
+
+      <!-- ===== Mở rộng ===== -->
+      <div class="expanded" id="expanded">
+        <nav class="topbar">
+          <div class="tb-grp">
+            <button class="tb" data-tab="music" title="Nhạc"></button>
+            <button class="tb" data-tab="water" title="Nhắc uống nước"></button>
+            <button class="tb tb-date" data-tab="calendar" title="Lịch"><span id="tbDate">--</span></button>
+          </div>
+          <div class="tb-grp">
+            <button class="tb" data-tab="alarm" title="Báo thức"></button>
+            <button class="tb" data-tab="clip" title="Bảng tạm"></button>
+            <button class="tb" data-tab="shelf" title="Kệ tạm (kéo thả tệp)"></button>
+            <button class="tb" data-tab="ctrl" title="Điều khiển"></button>
+          </div>
+        </nav>
+
+        <div class="views">
+
+          <!-- Nhạc -->
+          <section class="view" data-view="music">
+            <div id="musicBody"></div>
+            <div class="m-out" id="musicOut"></div>
+          </section>
+
+          <!-- Nhắc uống nước -->
+          <section class="view" data-view="water">
+            <div class="sl" id="slEvery"></div>
+            <div class="range" id="wRange"></div>
+            <div class="w-row">
+              <input class="field" id="wMsg" maxlength="60" placeholder="Nội dung nhắc" spellcheck="false" />
+              <button class="sq" id="wSave" data-act="w-save" title="Lưu"></button>
+              <button class="chip" id="wSnooze" data-act="w-snooze-cycle"></button>
+            </div>
+          </section>
+
+          <!-- Lịch -->
+          <section class="view" data-view="calendar">
+            <div class="cal-head">
+              <div class="cal-ttl"><span class="ci" id="calIco"></span><span id="calTitle"></span></div>
+              <div class="cal-nav">
+                <button class="ib-s" data-act="cal-today" title="Hôm nay" id="calTodayBtn"></button>
+                <button class="ib-s" data-act="cal-prev" id="calPrev"></button>
+                <button class="ib-s" data-act="cal-next" id="calNext"></button>
+              </div>
+            </div>
+            <div class="cal-wdrow" id="calWdRow"></div>
+            <div id="calBody"></div>
+            <button class="cal-grip" data-act="cal-toggle" title="Mở rộng / thu gọn"><i></i></button>
+            <div class="dt-head" id="dtHead"></div>
+            <div class="notes" id="notes"></div>
+            <div class="note-add">
+              <input class="field" id="noteIn" maxlength="80" placeholder="Thêm ghi chú…" spellcheck="false" />
+              <input class="field time" id="noteAt" type="time" title="Giờ nhắc (không bắt buộc)" />
+              <button class="sq" data-act="note-add" id="noteAddBtn"></button>
+            </div>
+          </section>
+
+          <!-- Báo thức -->
+          <section class="view" data-view="alarm">
+            <div class="alarm-head">
+              <div class="alarm-title">Báo thức</div>
+              <button class="ib-s orange" data-act="alarm-add" id="alarmAddBtn" aria-label="Thêm báo thức"></button>
+            </div>
+            <div class="alarm-list" id="alarmList"></div>
+            <div class="a-editor" id="alarmEditor"></div>
+          </section>
+
+          <!-- Bảng tạm -->
+          <section class="view" data-view="clip">
+            <div class="clip-head">
+              <div class="clip-ttl">Bảng tạm</div>
+              <div class="clip-tools">
+                <button class="ib-s" data-act="clip-clear" id="clipClearBtn" title="Xóa lịch sử (giữ mục đã ghim)"></button>
+                <div class="search"><input id="clipQ" placeholder="Tìm kiếm" spellcheck="false" /><button class="x" data-act="clip-q-clear" id="clipQx"></button></div>
+              </div>
+            </div>
+            <div class="clip-pins" id="clipPins"></div>
+            <div class="clip-list" id="clipList"></div>
+          </section>
+
+          <!-- Kệ tạm -->
+          <section class="view" data-view="shelf">
+            <div class="clip-head">
+              <div class="clip-ttl">Kệ tạm</div>
+              <div class="clip-tools"><button class="ib-s" data-act="shelf-clear" id="shelfClearBtn" title="Xóa hết khỏi kệ (không xóa tệp thật)"></button></div>
+            </div>
+            <div class="shelf-list" id="shelfList"></div>
+          </section>
+
+          <!-- Điều khiển -->
+          <section class="view" data-view="ctrl">
+            <div class="sl" data-sl="vol" id="slVol"></div>
+            <div class="sl" data-sl="bri" id="slBri"></div>
+            <div class="ic-row" id="icRow"></div>
+
+            <div class="ct-panel ct-timer on">
+              <div class="ruler" id="ruler"><div class="ticks" id="ticks"></div><i class="mark"></i></div>
+              <div class="t-row">
+                <button class="pill orange" id="tToggle" data-act="t-toggle">Bắt đầu</button>
+                <button class="ib-s round" data-act="t-plus" title="Thêm 1 phút" id="tPlus"></button>
+                <button class="ib-s round" data-act="t-reset" title="Đặt lại" id="tReset"></button>
+                <div class="t-big" id="tTime">5:00</div>
+              </div>
+            </div>
+
+            <div class="ct-panel ct-sw">
+              <div class="sw-main">
+                <div class="sw-time" id="swTime">00:00.00</div>
+                <div class="sw-laps" id="swLaps"></div>
+              </div>
+              <div class="t-row">
+                <button class="pill orange" id="swToggle" data-act="sw-toggle">Bắt đầu</button>
+                <button class="pill gray" id="swLapBtn" data-act="sw-lap">Vòng</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- ===== Thông báo ngắn (sạc, pin yếu, tải xong, tai nghe...) ===== -->
+      <div class="notice-view" id="noticeView">
+        <div class="n-ico" id="nIcon"></div>
+        <div class="n-txt"><div class="n-title" id="nTitle"></div><div class="n-sub" id="nSub"></div></div>
+      </div>
+
+      <!-- ===== Đổ chuông ===== -->
+      <div class="ring-view" id="ringView">
+        <div class="ring-row">
+          <div class="ring-icon" id="ringIcon"></div>
+          <div class="ring-text">
+            <div class="ring-title" id="ringTitle">Báo thức</div>
+            <div class="ring-sub" id="ringSub"></div>
+          </div>
+        </div>
+        <div class="ring-actions">
+          <button class="pbtn tint" id="ringRestart" data-act="ring-restart">Bắt đầu lại</button>
+          <button class="pbtn tint" id="ringSnooze" data-act="ring-snooze">Báo lại 5 phút</button>
+          <button class="pbtn light" id="ringStop" data-act="ring-stop">Tắt</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="lunar.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
