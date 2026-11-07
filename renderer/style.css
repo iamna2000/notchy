@@ -67,7 +67,10 @@ input::placeholder { color: var(--label3); }
 /* Bên phải: sóng âm (thu gọn) và nút phát/tạm dừng (rê chuột) nằm chồng cùng một ô */
 .compact.music .c-right { display: grid; place-items: center; }
 .c-right > .c-wave, .c-right > .c-pp { grid-area: 1 / 1; transition: opacity .25s ease, transform .45s var(--spring); }
-.c-wave { display: block; width: 19.5px; height: 18px; }
+/* Sóng âm không nhận chuột: nếu không, lúc hover nó (mờ nhưng có transform) nằm đè lên nút tạm dừng
+   và cú bấm rơi xuống viên thuốc -> mở luôn bảng đầy đủ */
+.c-wave { display: block; width: 19.5px; height: 18px; pointer-events: none; }
+.c-right > .c-pp { position: relative; z-index: 1; }
 .c-wave.idle { opacity: .55; }
 .c-pp { width: 32px; height: 32px; border-radius: 16px; color: #fff; opacity: 0; transform: scale(.6); pointer-events: none; }
 .c-pp svg { width: 16px; height: 16px; }
