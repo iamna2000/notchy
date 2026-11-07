@@ -340,3 +340,13 @@ body.dropping .shelf-list { outline: 1.5px dashed var(--blue); outline-offset: 3
 .dot.hol { background: var(--red); }
 .note.hol .tx { color: var(--orange); }
 .note.hol .tm { color: var(--red); }
+
+/* ================== Tiết kiệm GPU: dừng animation vô hạn khi phần chứa nó đang ẩn ==================
+   Phần bị ẩn bằng opacity/blur vẫn bị vẽ lại mỗi khung hình nếu animation bên trong còn chạy
+   (đo được: ~2/3 tải GPU lúc để yên). Dùng paused thay vì bỏ animation để hiện lại không bị giật. */
+.island:not([data-mode="compact"]) .compact .mq.run,
+.island:not([data-mode="open"]) .expanded .mq.run,
+.view:not(.on) .mq.run,
+.island:not([data-mode="open"]) .eq.on i,
+.view:not(.on) .eq.on i,
+.island:not([data-mode="ring"]) .ring-icon { animation-play-state: paused; }
