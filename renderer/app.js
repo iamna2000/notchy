@@ -273,7 +273,7 @@
     const hasDur = m.dur > 0;
     body.innerHTML = `
       <div class="m-row">
-        <div class="art ${m.status === 'Paused' ? 'paused' : ''}" id="mArt">${m.thumb ? '' : ICON.music}</div>
+        <div class="art ${m.status === 'Paused' ? 'paused' : ''}" id="mArt" data-act="m-focus" title="Mở ${esc(appName(m.app) || 'trình phát')}">${m.thumb ? '' : ICON.music}</div>
         <div class="m-meta"><div class="m-title">${esc(m.title)}</div><div class="m-artist">${esc(m.artist || m.album || appName(m.app) || ' ')}</div></div>
         <div class="m-eq eq ${isPlaying() ? 'on' : ''}"><i></i><i></i><i></i></div>
       </div>
@@ -868,6 +868,7 @@
     switch (a) {
       // Nhạc
       case 'm-play': m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
+      case 'm-focus': api.media('focus'); break;
       case 'm-next': api.media('next'); break;
       case 'm-prev': api.media('prev'); break;
       case 'm-shuffle': m.shuffle = !m.shuffle; api.media('shuffle'); musicSig = ''; renderMusic(); break;

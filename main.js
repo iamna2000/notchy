@@ -395,7 +395,7 @@ ipcMain.on('island-size', (_e, s) => {
   if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) island = { w: s.w, h: s.h };
 });
 ipcMain.on('media-cmd', (_e, cmd) => {
-  if (typeof cmd !== 'string' || !/^(play_pause|next|prev|shuffle|seek:\d+(\.\d+)?)$/.test(cmd)) return;
+  if (typeof cmd !== 'string' || !/^(play_pause|next|prev|shuffle|focus|seek:\d+(\.\d+)?)$/.test(cmd)) return;
   writeProc(mediaProc, cmd);
 });
 ipcMain.on('sys-cmd', (_e, cmd) => {

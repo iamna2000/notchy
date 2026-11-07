@@ -125,6 +125,9 @@ input::placeholder { color: var(--label3); }
 .m-row { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
 .art { width: 66px; height: 66px; border-radius: 15px; background: var(--g1) center / cover no-repeat; flex: none; display: flex; align-items: center; justify-content: center; color: var(--label3); transition: transform .5s var(--spring), opacity .3s; }
 .art.paused { transform: scale(.92); opacity: .8; }
+.art[data-act] { cursor: pointer; }
+.art[data-act]:hover { transform: scale(1.05); }
+.art[data-act]:active { transform: scale(.96); transition-duration: .15s; }
 .art svg { width: 28px; height: 28px; }
 .m-meta { flex: 1; min-width: 0; }
 .m-title { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }

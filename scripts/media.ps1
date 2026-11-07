@@ -36,6 +36,54 @@ public static class DI {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
   [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+  // Dua cua so cua trinh phat len truoc. names: ten tien trinh (khong .exe), title: ten bai dang phat.
+  // Uu tien cua so co tieu de chua ten bai (dung tab YouTube dang phat). Tra ve false neu khong co cua so nao.
+  public static bool FocusApp(string[] names, string title) {
+    IntPtr best = IntPtr.Zero, first = IntPtr.Zero;
+    string t = (title ?? "").Trim().ToLowerInvariant();
+    EnumWindows(delegate (IntPtr h, IntPtr l) {
+      if (!IsWindowVisible(h) || GetWindow(h, 4) != IntPtr.Zero) return true;   // 4 = GW_OWNER: bo popup
+      int cloaked;
+      if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
+      StringBuilder sb = new StringBuilder(512);
+      if (GetWindowText(h, sb, 512) == 0) return true;
+      uint pid;
+      GetWindowThreadProcessId(h, out pid);
+      string pn;
+      try { pn = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return true; }
+      bool match = false;
+      foreach (string n in names) if (string.Equals(pn, n, StringComparison.OrdinalIgnoreCase)) { match = true; break; }
+      if (!match) return true;
+      if (first == IntPtr.Zero) first = h;
+      if (t.Length > 0 && sb.ToString().ToLowerInvariant().Contains(t)) { best = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    IntPtr w = best != IntPtr.Zero ? best : first;
+    if (w == IntPtr.Zero) return false;
+    if (IsIconic(w)) ShowWindow(w, 9);   // SW_RESTORE
+    // Windows chi cho tien trinh dang nhan input doi cua so truoc: tam gan vao luong cua cua so dang o truoc
+    IntPtr fg = GetForegroundWindow();
+    uint dummy, fgThread = GetWindowThreadProcessId(fg, out dummy), me = GetCurrentThreadId();
+    bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+    BringWindowToTop(w);
+    SetForegroundWindow(w);
+    if (attached) AttachThreadInput(me, fgThread, false);
+    if (GetForegroundWindow() != w) {
+      keybd_event(0x12, 0, 0, UIntPtr.Zero);   // du phong: nhan Alt de duoc phep doi cua so truoc
+      SetForegroundWindow(w);
+      keybd_event(0x12, 0, 2, UIntPtr.Zero);
+    }
+    return true;
+  }
 
   // Tra ve ten lop cua cua so tren cung tai diem (x, y); "desk" neu la man hinh nen/taskbar; "" neu khong co.
   public static string CoverAt(int x, int y, uint ignorePid) {
@@ -160,8 +208,40 @@ function Get-Thumb($props, $tryNo) {
   }
 }
 
+# Mo cua so cua ung dung dang phat (Spotify, trinh duyet dang phat YouTube...)
+function Focus-Player($s) {
+  if ($s -eq $null -or -not $native) { return }
+  $aumid = '' + $s.SourceAppUserModelId
+  $title = ''
+  try { $title = '' + (Await ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])).Title } catch {}
+  $a = $aumid.ToLowerInvariant()
+  $names = @()
+  if ($a -like '*spotify*') { $names = @('Spotify') }
+  elseif ($a -like '*msedge*') { $names = @('msedge') }
+  elseif ($a -like '*chrome*') { $names = @('chrome') }
+  elseif ($a -like '*firefox*' -or $a -eq '308046b0af4a39cb') { $names = @('firefox') }
+  elseif ($a -like '*brave*') { $names = @('brave') }
+  elseif ($a -like '*opera*') { $names = @('opera') }
+  elseif ($a -like '*coccoc*') { $names = @('browser') }
+  else {
+    # AUMID dang "app.exe" hoac "Hang.App_xxx!App": lay phan ten de doan ten tien trinh
+    $n = ($a -replace '\.exe$', '') -replace '^.*!', ''
+    $names = @($n, ($n -replace '^.*\.', ''))
+  }
+  $ok = $false
+  try { $ok = [DI]::FocusApp([string[]]$names, $title) } catch { LogErr ('focus: ' + $_.Exception.Message) }
+  # Khong co cua so hien (vd. Spotify dang an duoi khay): kich hoat lai ung dung dong goi qua shell
+  if (-not $ok -and $aumid -like '*!*') {
+    try { Start-Process explorer.exe ('shell:AppsFolder\' + $aumid) } catch { LogErr ('focus shell: ' + $_.Exception.Message) }
+  }
+}
+
 function Run-Command($cmd) {
   if ($cmd -eq 'paste') { Start-Sleep -Milliseconds 80; Send-Paste; return }
+  if ($cmd -eq 'focus') {
+    try { if ($mgr -ne $null) { Focus-Player ($mgr.GetCurrentSession()) } } catch { LogErr ('focus: ' + $_.Exception.Message) }
+    return
+  }
   $s = $null
   if ($mgr -ne $null) { try { $s = $mgr.GetCurrentSession() } catch {} }
   try {
