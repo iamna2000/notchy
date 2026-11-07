@@ -311,13 +311,29 @@
     const el = $('#musicOut');
     if (!hasMusic()) return;
     const devs = S.sys.devices || [];
-    el.innerHTML = `
+    const html = `
       <div class="out-vol">${ICON.spkLow}<div class="bar" data-vol="1"><i></i></div>${ICON.spkHigh}</div>
       <div class="out-chips">
         ${devs.map((d) => `<button class="out-chip ${d.def ? 'on' : ''}" data-act="dev" data-id="${esc(d.id)}" title="${esc(d.name)}">${devIcon(d.name)}<span>${esc(d.name)}</span></button>`).join('')}
         <button class="out-chip" data-act="open-sound">${ICON.gear}<span>Cài đặt</span></button>
       </div>`;
+    // Danh sách được hỏi lại mỗi ~8 giây: chỉ dựng lại khi thực sự đổi, và giữ nguyên vị trí đã cuộn
+    if (html !== outHtml || !el.firstElementChild) {
+      const old = $('.out-chips', el), left = old ? old.scrollLeft : 0;
+      outHtml = html;
+      el.innerHTML = html;
+      const chips = $('.out-chips', el);
+      chips.scrollLeft = left;
+      chipRO.observe(chips); // tính lại viền mờ khi bảng hiện ra (lúc dựng có thể đang ẩn, kích thước 0)
+    }
     renderVol();
+  }
+  let outHtml = '';
+  const chipRO = new ResizeObserver((es) => es.forEach((e) => updateChipFade(e.target)));
+  // Viền mờ ở mép còn nội dung bị che, để biết là cuộn được
+  function updateChipFade(c) {
+    c.classList.toggle('fade-l', c.scrollLeft > 2);
+    c.classList.toggle('fade-r', c.scrollLeft < c.scrollWidth - c.clientWidth - 2);
   }
   function renderVol() {
     const v = S.sys.vol, ok = v >= 0;
@@ -967,8 +983,50 @@
     if (ev.target.closest('#ruler') && !S.timer.running) {
       ev.preventDefault();
       timerAdjust(ev.deltaY < 0 ? 60 : -60);
+      return;
+    }
+    // Danh sách thiết bị phát: lăn chuột dọc để cuộn ngang
+    const chips = ev.target.closest('.out-chips');
+    if (chips) {
+      ev.preventDefault();
+      const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
+      chips.scrollBy({ left: ev.deltaMode === 1 ? d * 40 : d, behavior: 'smooth' });
     }
   }, { passive: false });
+
+  // Danh sách thiết bị phát: kéo để cuộn ngang (kéo xong thì không tính là bấm chọn)
+  let chipDrag = null;
+  document.addEventListener('pointerdown', (ev) => {
+    const c = ev.target.closest('.out-chips');
+    if (!c || ev.button !== 0) return;
+    chipDrag = { c, x: ev.clientX, left: c.scrollLeft, moved: false, id: ev.pointerId };
+  });
+  document.addEventListener('pointermove', (ev) => {
+    if (!chipDrag) return;
+    const dx = ev.clientX - chipDrag.x;
+    if (!chipDrag.moved && Math.abs(dx) > 4) {
+      chipDrag.moved = true;
+      try { chipDrag.c.setPointerCapture(chipDrag.id); } catch (_) {}
+      chipDrag.c.classList.add('dragging');
+      api.hold(true);
+    }
+    if (chipDrag.moved) chipDrag.c.scrollLeft = chipDrag.left - dx;
+  });
+  let chipNoClickUntil = 0;
+  function endChipDrag() {
+    if (!chipDrag) return;
+    if (chipDrag.moved) {
+      chipDrag.c.classList.remove('dragging');
+      api.hold(false);
+      chipNoClickUntil = Date.now() + 80; // cú click ngay sau khi thả không tính là chọn thiết bị
+    }
+    chipDrag = null;
+  }
+  ['pointerup', 'pointercancel'].forEach((e) => document.addEventListener(e, endChipDrag));
+  document.addEventListener('click', (e) => {
+    if (Date.now() < chipNoClickUntil) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+  document.addEventListener('scroll', (ev) => { if (ev.target.classList && ev.target.classList.contains('out-chips')) updateChipFade(ev.target); }, true);
 
   document.addEventListener('contextmenu', (ev) => { ev.preventDefault(); api.menu(); });
 
