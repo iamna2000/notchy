@@ -48,6 +48,10 @@
     plus: L('<path d="M12 5v14M5 12h14"/>', 2),
     left: L('<path d="m14.5 6-6 6 6 6"/>', 2),
     right: L('<path d="m9.5 6 6 6-6 6"/>', 2),
+    up: L('<path d="m6 14.5 6-6 6 6"/>', 2),
+    down: L('<path d="m6 9.5 6 6 6-6"/>', 2),
+    expand: L('<path d="M12 4.5v10M7.5 10 12 14.5 16.5 10M5.5 19h13"/>', 2),
+    collapse: L('<path d="M12 19.5v-10M7.5 14 12 9.5l4.5 4.5M5.5 5h13"/>', 2),
     up: L('<path d="m6 14.5 6-6 6 6"/>'),
     down: L('<path d="m6 9.5 6 6 6-6"/>'),
     calendar: L('<rect x="3.8" y="5.2" width="16.4" height="15" rx="3.2"/><path d="M3.8 10.2h16.4M8.4 3.2v4M15.6 3.2v4"/>', 1.8),
@@ -128,7 +132,7 @@
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) : 168;
       case 'sys': return 302;
-      case 'calendar': return S.calMonth ? 414 : 272;
+      case 'calendar': return S.calMonth ? 344 : 256 + Math.min(3, calEvents()) * 46;
       case 'alarm': return 312;
       case 'clip': return 352;
       case 'shelf': return 332;
@@ -752,49 +756,110 @@
   });
 
   /* ================= Lịch + ghi chú ================= */
-  const HOL_SOLAR = { '1/1': 'Tết Dương lịch', '14/2': 'Valentine', '8/3': 'Quốc tế Phụ nữ', '30/4': 'Giải phóng miền Nam', '1/5': 'Quốc tế Lao động', '1/6': 'Quốc tế Thiếu nhi', '2/9': 'Quốc khánh', '20/10': 'Phụ nữ Việt Nam', '20/11': 'Nhà giáo Việt Nam', '24/12': 'Đêm Giáng sinh', '25/12': 'Giáng sinh' };
-  const HOL_LUNAR = { '1/1': 'Tết Nguyên Đán', '2/1': 'Mùng 2 Tết', '3/1': 'Mùng 3 Tết', '15/1': 'Rằm tháng Giêng', '10/3': 'Giỗ Tổ Hùng Vương', '15/4': 'Phật Đản', '5/5': 'Tết Đoan Ngọ', '15/7': 'Vu Lan', '15/8': 'Tết Trung Thu', '23/12': 'Ông Táo chầu trời' };
-  function holidayOf(d) {
-    const l = lunarOf(d);
-    return [HOL_SOLAR[d.getDate() + '/' + (d.getMonth() + 1)], !l.leap && HOL_LUNAR[l.d + '/' + l.m]].filter(Boolean).join(' · ');
+  // Ngày lễ: [tên, lễ lớn (hiện ở "Ngày lễ sắp tới"), nghỉ lễ chính thức (vạch đỏ)]
+  const HOL_SOLAR = {
+    '1/1': ['Tết Dương lịch', 1, 1], '14/2': ['Valentine', 1, 0], '8/3': ['Quốc tế Phụ nữ', 1, 0],
+    '30/4': ['Giải phóng miền Nam', 1, 1], '1/5': ['Quốc tế Lao động', 1, 1], '1/6': ['Quốc tế Thiếu nhi', 1, 0],
+    '2/9': ['Quốc khánh', 1, 1], '20/10': ['Phụ nữ Việt Nam', 1, 0], '20/11': ['Nhà giáo Việt Nam', 1, 0],
+    '24/12': ['Đêm Giáng sinh', 0, 0], '25/12': ['Giáng sinh', 1, 0],
+  };
+  const HOL_LUNAR = {
+    '1/1': ['Tết Nguyên Đán', 1, 1], '2/1': ['Mùng 2 Tết', 0, 1], '3/1': ['Mùng 3 Tết', 0, 1],
+    '15/1': ['Rằm tháng Giêng', 1, 0], '10/3': ['Giỗ Tổ Hùng Vương', 1, 1], '15/4': ['Phật Đản', 1, 0],
+    '5/5': ['Tết Đoan Ngọ', 1, 0], '15/7': ['Vu Lan', 1, 0], '15/8': ['Tết Trung Thu', 1, 0], '23/12': ['Ông Táo chầu trời', 1, 0],
+  };
+  // Các ngày lễ của một ngày: [{ name, major, off, lunar }]
+  function holidaysOf(d) {
+    const l = lunarOf(d), out = [];
+    const s = HOL_SOLAR[d.getDate() + '/' + (d.getMonth() + 1)];
+    if (s) out.push({ name: s[0], major: !!s[1], off: !!s[2], lunar: false });
+    const h = !l.leap && HOL_LUNAR[l.d + '/' + l.m];
+    if (h) out.push({ name: h[0], major: !!h[1], off: !!h[2], lunar: true });
+    return out;
   }
+  const holidayOf = (d) => holidaysOf(d).map((h) => h.name).join(' · ');
+  // Ngày lễ lớn trong 12 tháng tới (đổi lễ âm lịch ra dương lịch bằng cách quét từng ngày); tính lại mỗi ngày 1 lần
+  let upcomingCache = { key: '', list: [] };
+  function upcomingHolidays() {
+    const t0 = today0(), key = ymd(t0);
+    if (upcomingCache.key === key) return upcomingCache.list;
+    const list = [];
+    for (let i = 0; i < 400; i++) {
+      const d = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + i);
+      holidaysOf(d).forEach((h) => { if (h.major) list.push({ ...h, d, days: i }); });
+    }
+    upcomingCache = { key, list };
+    return list;
+  }
+  const countdown = (n) => (n === 0 ? 'Hôm nay' : n === 1 ? 'Ngày mai' : `còn ${n} ngày`);
   const saveNotes = () => store.set('notes', S.notes);
   const notesOf = (d) => S.notes[ymd(d)] || [];
   function weekStart(d) { const o = (d.getDay() + 6) % 7; return new Date(d.getFullYear(), d.getMonth(), d.getDate() - o); }
+  // Chấm dưới số ngày: đỏ = nghỉ lễ chính thức, xanh tím = ngày lễ khác, cam = có ghi chú
+  const dotsOf = (d) => {
+    const hs = holidaysOf(d), n = notesOf(d).length;
+    return (hs.length ? `<i class="${hs.some((h) => h.off) ? 'hol' : 'hol2'}"></i>` : '') + (n ? '<i></i>' : '');
+  };
   function renderCalendar() {
-    const t0 = today0(), sel = S.sel;
+    const t0 = today0(), sel = S.sel, month = S.calMonth;
     $('#calTitle').textContent = `Tháng ${sel.getMonth() + 1} năm ${sel.getFullYear()}`;
-    let html = '';
-    const cell = (d, cls, tag) => {
-      const l = lunarOf(d), n = notesOf(d).length, hl = holidayOf(d);
-      return `<div class="${tag} ${cls}" data-act="cal-pick" data-ts="${d.getTime()}"><b>${d.getDate()}</b><small class="${l.d === 1 ? 'first' : ''}">${l.d === 1 ? l.d + '/' + l.m : l.d}</small>${n ? '<i class="dot"></i>' : hl ? '<i class="dot hol"></i>' : ''}</div>`;
-    };
-    let weekDays = [];
-    if (!S.calMonth) {
+    $('#calExp').innerHTML = month ? ICON.collapse : ICON.expand;
+    $('#calExp').classList.toggle('on', month);
+    $('#calPrev').innerHTML = month ? ICON.up : ICON.left;
+    $('#calNext').innerHTML = month ? ICON.down : ICON.right;
+    // "Hôm nay" chỉ hiện khi đang không xem ngày hôm nay
+    $('#calTodayBtn').classList.toggle('show', sel.getTime() !== t0.getTime());
+    $('.view[data-view="calendar"]').classList.toggle('month', month);
+    const cls = (d, extra) => [extra, d.getTime() === t0.getTime() ? 'today' : '', d.getTime() === sel.getTime() ? 'sel' : '',
+      holidaysOf(d).some((h) => h.off) ? 'off' : '', d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''].filter(Boolean).join(' ');
+    if (!month) {
+      // Dải tuần: thẻ có thứ + số ngày + chấm
       const ws = weekStart(sel);
-      weekDays = Array.from({ length: 7 }, (_, i) => new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + i));
-      html = '<div class="cal-week">' + weekDays.map((d) => cell(d, [d.getTime() === t0.getTime() ? 'today' : '', d.getTime() === sel.getTime() ? 'sel' : ''].join(' '), 'wc')).join('') + '</div>';
-    } else {
-      const first = new Date(sel.getFullYear(), sel.getMonth(), 1), offset = (first.getDay() + 6) % 7;
-      let cells = '';
-      for (let i = 0; i < 42; i++) {
-        const d = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i);
-        cells += cell(d, [d.getMonth() !== sel.getMonth() ? 'other' : '', d.getTime() === t0.getTime() ? 'today' : '', d.getTime() === sel.getTime() ? 'sel' : ''].join(' '), 'mc');
-      }
-      html = `<div class="cal-grid">${cells}</div>`;
+      const days = Array.from({ length: 7 }, (_, i) => new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + i));
+      $('#calBody').innerHTML = '<div class="cw">' + days.map((d) => `
+        <div class="${cls(d, 'cw-d')}" data-act="cal-pick" data-ts="${d.getTime()}">
+          <span>${WD_SHORT[d.getDay()]}</span><b>${d.getDate()}</b><em>${dotsOf(d)}</em>
+        </div>`).join('') + '</div>';
+      const l = lunarOf(sel);
+      $('#dtHead').innerHTML = `<div>${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}</div><span>Âm lịch ${l.d}/${l.m}${l.leap ? ' nhuận' : ''} · ${window.Lunar.canChi(l.y)}</span>`;
+      renderNotes();
+      return;
     }
-    $('#calBody').innerHTML = html;
-    const todayIdx = !S.calMonth ? weekDays.findIndex((d) => d.getTime() === t0.getTime()) : -1;
-    $('#calWdRow').innerHTML = MON_FIRST.map((d, i) => `<span class="${i === todayIdx ? 'today' : ''}">${WD_SHORT[d]}</span>`).join('');
-    const l = lunarOf(sel);
-    $('#dtHead').innerHTML = `<div>${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}</div><span>Âm lịch ${l.d}/${l.m}${l.leap ? ' nhuận' : ''} · ${window.Lunar.canChi(l.y)}</span>`;
-    renderNotes();
+    // Cả tháng: lưới bên trái, ngày lễ sắp tới bên phải
+    const first = new Date(sel.getFullYear(), sel.getMonth(), 1), offset = (first.getDay() + 6) % 7;
+    const rows = Math.ceil((offset + new Date(sel.getFullYear(), sel.getMonth() + 1, 0).getDate()) / 7);
+    let cells = '';
+    for (let i = 0; i < rows * 7; i++) {
+      const d = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i);
+      const l = lunarOf(d);
+      cells += `<div class="${cls(d, d.getMonth() !== sel.getMonth() ? 'cm-d other' : 'cm-d')}" data-act="cal-pick" data-ts="${d.getTime()}" title="Âm lịch ${l.d}/${l.m}${holidayOf(d) ? ' · ' + esc(holidayOf(d)) : ''}"><b>${d.getDate()}</b><em>${dotsOf(d)}</em></div>`;
+    }
+    const wd = MON_FIRST.map((d) => `<span class="${d === 0 || d === 6 ? 'we' : ''}">${WD_SHORT[d]}</span>`).join('');
+    // Bên phải: sự kiện của ngày đang chọn (nếu có) rồi ngày lễ lớn sắp tới
+    const selItems = [...holidaysOf(sel).map((h) => ({ t: h.name, s: h.lunar ? 'Lễ âm lịch' : 'Ngày lễ', c: h.off ? 'red' : 'blue' })),
+      ...notesOf(sel).map((n) => ({ t: n.t, s: n.at || 'Ghi chú', c: 'orange' }))];
+    const up = upcomingHolidays().map((h) => `
+      <div class="hl ${h.off ? 'red' : 'blue'}" data-act="cal-pick" data-ts="${h.d.getTime()}" data-month="1">
+        <div class="hl-t"><b>${esc(h.name)}</b><span class="hl-sub"><span>${h.d.getDate()}/${h.d.getMonth() + 1} · ${WD_SHORT[h.d.getDay()]}${h.lunar ? ' · âm' : ''}</span><em class="${h.days <= 7 ? 'soon' : ''}">${countdown(h.days)}</em></span></div>
+      </div>`).join('');
+    $('#calBody').innerHTML = `
+      <div class="cm">
+        <div class="cm-left"><div class="cm-wd">${wd}</div><div class="cm-grid">${cells}</div></div>
+        <div class="cm-right">
+          ${selItems.length ? `<div class="cm-sec">${sel.getDate()}/${sel.getMonth() + 1}</div>${selItems.map((x) => `<div class="hl ${x.c} static"><div class="hl-t"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></div></div>`).join('')}` : ''}
+          <div class="cm-sec">Ngày lễ sắp tới</div>${up}
+        </div>
+      </div>`;
   }
+  // Sự kiện của ngày đang chọn (chế độ tuần): thẻ có vạch màu bên trái
   function renderNotes() {
-    const list = notesOf(S.sel);
-    const hl = holidayOf(S.sel);
-    $('#notes').innerHTML = (hl ? `<div class="note hol"><span class="tm">Lễ</span><span class="tx">${esc(hl)}</span></div>` : '') + list.map((n) => `<div class="note">${n.at ? `<span class="tm">${n.at}</span>` : ''}<span class="tx">${esc(n.t)}</span><button data-act="note-del" data-id="${n.id}" aria-label="Xóa">${ICON.x}</button></div>`).join('');
+    const sel = S.sel, when = `${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}`;
+    const hol = holidaysOf(sel).map((h) => `<div class="ev ${h.off ? 'red' : 'blue'}"><div class="ev-t"><b>${esc(h.name)}</b><span>${h.lunar ? 'Lễ âm lịch' : 'Ngày lễ'}</span></div></div>`).join('');
+    const notes = notesOf(sel).map((n) => `<div class="ev orange"><div class="ev-t"><b>${esc(n.t)}</b><span>${n.at ? n.at + ' · ' : ''}${when}</span></div><button data-act="note-del" data-id="${n.id}" aria-label="Xóa">${ICON.x}</button></div>`).join('');
+    $('#notes').innerHTML = hol + notes;
   }
+  // Số sự kiện hiện ở chế độ tuần (để tính chiều cao bảng)
+  const calEvents = () => holidaysOf(S.sel).length + notesOf(S.sel).length;
   function addNote() {
     const inp = $('#noteIn'), at = $('#noteAt');
     const t = inp.value.trim();
@@ -1361,7 +1426,6 @@
   $('#calIco').innerHTML = ICON.calendar;
   $('#calPrev').innerHTML = ICON.left;
   $('#calNext').innerHTML = ICON.right;
-  $('#calTodayBtn').innerHTML = ICON.clock;
   $('#alarmAddBtn').innerHTML = ICON.plus;
   $('#clipClearBtn').innerHTML = ICON.minusCircle;
   $('#shelfClearBtn').innerHTML = ICON.minusCircle;

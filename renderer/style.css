@@ -222,43 +222,84 @@ input::placeholder { color: var(--label3); }
 
 /* ================== Lịch ================== */
 .cal-head { display: flex; align-items: center; justify-content: space-between; height: 28px; margin-top: 2px; }
-.cal-ttl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--label2); }
-.cal-ttl .ci svg { width: 14px; height: 14px; }
-.cal-nav { display: flex; gap: 2px; }
-.cal-wdrow, .cal-grid, .cal-week { display: grid; grid-template-columns: repeat(7, 1fr); }
-.cal-wdrow { margin-top: 8px; }
-.cal-wdrow span { text-align: center; font-size: 10px; font-weight: 600; color: var(--label3); }
-.cal-wdrow span.today { color: #a99cff; }
-.wc { position: relative; height: 50px; border-radius: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: background-color .2s; }
-.wc:hover { background: var(--g1); }
-.wc.sel { background: var(--g2); }
-.wc b { font-size: 16px; font-weight: 600; line-height: 1.1; }
-.wc small, .mc small { font-size: 9px; color: var(--label2); line-height: 1.3; }
-.wc small.first, .mc small.first { color: var(--orange); font-weight: 600; }
-.wc.today b, .mc.today b { color: #a99cff; }
-.dot { position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 2px; background: var(--orange); }
-.mc { position: relative; height: 34px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
-.mc:hover { background: var(--g1); }
-.mc b { font-size: 13px; font-weight: 500; line-height: 1.1; }
-.mc.other { opacity: .3; }
-.mc.sel { background: var(--g2); }
-.mc .dot { bottom: 2px; }
-.cal-grip { display: flex; width: 100%; height: 14px; margin-top: 2px; }
-.cal-grip i { width: 34px; height: 4px; border-radius: 2px; background: var(--g3); }
-.cal-grip:hover i { background: var(--label3); }
-.dt-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; font-size: 13px; font-weight: 600; }
+.cal-ttl { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--label2); }
+.cal-ttl .ci svg { width: 15px; height: 15px; }
+.cal-nav { display: flex; align-items: center; gap: 4px; }
+/* Nút mở rộng (vuông bo góc, đổi ⌄/⌃) và "Hôm nay" (chỉ hiện khi đang xem ngày khác) */
+.cal-exp { width: 26px; height: 26px; border-radius: 8px; background: var(--g2); color: #fff; }
+.cal-exp:hover { background: var(--g3); }
+.cal-exp svg { width: 14px; height: 14px; }
+.cal-today { display: none; height: 26px; padding: 0 11px; border-radius: 13px; background: var(--g2); font-size: 12px; font-weight: 500; }
+.cal-today.show { display: inline-flex; }
+.cal-today:hover { background: var(--g3); }
+
+/* ----- Chế độ tuần: 7 thẻ ngày ----- */
+.cw { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px; }
+.cw-d { position: relative; height: 64px; border-radius: 14px; background: var(--g1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background-color .2s; }
+.cw-d:hover { background: var(--g2); }
+.cw-d.sel { background: var(--g3); }
+.cw-d span { font-size: 10px; font-weight: 600; color: var(--label2); }
+.cw-d b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cw-d.today span, .cw-d.today b { color: #b9a6ff; }
+.cw-d.off b { color: #ff6961; }
+.cw-d.today.off b { color: #b9a6ff; }
+.cw-d em, .cm-d em { position: absolute; bottom: 7px; left: 0; right: 0; display: flex; justify-content: center; gap: 3px; }
+.cw-d em i, .cm-d em i { width: 4px; height: 4px; border-radius: 2px; background: var(--orange); }
+.cw-d em i.hol, .cm-d em i.hol { background: var(--red); }
+.cw-d em i.hol2, .cm-d em i.hol2 { background: #8e8cf3; }
+
+.dt-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 13px; font-weight: 600; }
 .dt-head span { font-size: 11px; font-weight: 400; color: var(--label2); }
-.notes { margin-top: 6px; max-height: 56px; overflow-y: auto; }
+
+/* Sự kiện của ngày (chế độ tuần): thẻ có vạch màu bên trái */
+.notes { margin-top: 6px; max-height: 136px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.notes:empty { display: none; }
 .notes::-webkit-scrollbar { width: 0; }
-.note { display: flex; align-items: center; gap: 8px; height: 26px; font-size: 12px; }
-.note .tm { color: var(--orange); font-variant-numeric: tabular-nums; font-size: 11px; }
-.note .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note button { width: 22px; height: 22px; border-radius: 11px; color: var(--label3); }
-.note button:hover { color: #fff; background: var(--g2); }
-.note button svg { width: 12px; height: 12px; }
-.note-add { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.ev, .hl { position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 5px 8px 5px 14px; border-radius: 10px; background: var(--g1); flex: none; }
+.ev::before, .hl::before { content: ""; position: absolute; left: 6px; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--c, var(--orange)); }
+.ev.orange, .hl.orange { --c: var(--orange); }
+.ev.red, .hl.red { --c: var(--red); }
+.ev.blue, .hl.blue { --c: #8e8cf3; }
+.ev-t, .hl-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ev-t b, .hl-t b { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-t span, .hl-t span { font-size: 10.5px; color: var(--label2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev button { width: 22px; height: 22px; border-radius: 11px; color: var(--label3); flex: none; opacity: 0; }
+.ev:hover button { opacity: 1; }
+.ev button:hover { color: #fff; background: var(--g2); }
+.ev button svg { width: 12px; height: 12px; }
+.note-add { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .note-add .field { flex: 1; height: 32px; }
 .note-add .field.time { flex: none; }
+
+/* ----- Chế độ tháng: lưới trái + ngày lễ sắp tới phải ----- */
+.view[data-view="calendar"].month .dt-head,
+.view[data-view="calendar"].month .notes,
+.view[data-view="calendar"].month .note-add { display: none; }
+.cm { display: grid; grid-template-columns: 236px 1fr; gap: 14px; margin-top: 8px; }
+.cm-wd, .cm-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cm-wd span { text-align: center; font-size: 10px; font-weight: 600; color: var(--label3); height: 18px; }
+.cm-grid { position: relative; row-gap: 2px; }
+/* Cột cuối tuần có nền tô nhẹ */
+.cm-grid::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(100% * 5 / 7); right: 0; border-radius: 10px; background: rgba(255, 255, 255, .045); pointer-events: none; }
+.cm-d { position: relative; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 9px; }
+.cm-d b { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; position: relative; z-index: 1; }
+.cm-d:hover b::before, .cm-d.sel b::before { content: ""; position: absolute; inset: -5px -7px; border-radius: 8px; background: var(--g2); z-index: -1; }
+.cm-d.sel b::before { background: var(--g3); }
+.cm-d.other b { color: var(--label3); }
+.cm-d.off b { color: #ff6961; }
+.cm-d.today b { color: #b9a6ff; font-weight: 700; }
+.cm-d em { bottom: 1px; }
+.cm-right { min-width: 0; height: 236px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.cm-right::-webkit-scrollbar { width: 0; }
+.cm-sec { font-size: 10.5px; font-weight: 600; color: var(--label3); letter-spacing: .02em; margin: 2px 0 -1px 2px; flex: none; }
+.hl { cursor: pointer; }
+.hl:hover { background: var(--g2); }
+.hl.static { cursor: default; }
+.hl.static:hover { background: var(--g1); }
+.hl-sub { display: flex; justify-content: space-between; gap: 6px; }
+.hl-sub > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hl em { flex: none; font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--label2); font-variant-numeric: tabular-nums; }
+.hl em.soon { color: var(--orange); }
 
 /* ================== Báo thức ================== */
 .alarm-head { display: flex; align-items: center; justify-content: space-between; height: 30px; }
@@ -386,10 +427,6 @@ body.dropping .shelf-list { outline: 1.5px dashed var(--blue); outline-offset: 3
 .n-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .n-sub { margin-top: 1px; font-size: 12px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ================== Lịch: ngày lễ ================== */
-.dot.hol { background: var(--red); }
-.note.hol .tx { color: var(--orange); }
-.note.hol .tm { color: var(--red); }
 
 /* ================== Tiết kiệm GPU: dừng animation vô hạn khi phần chứa nó đang ẩn ==================
    Phần bị ẩn bằng opacity/blur vẫn bị vẽ lại mỗi khung hình nếu animation bên trong còn chạy
