@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, powerSaveBlocker, shell } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, powerSaveBlocker, shell, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
@@ -100,6 +100,13 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true);
   placeWindow();
   win.setIgnoreMouseEvents(true, { forward: true });
+  // Sóng âm ở viên thuốc: cho giao diện nghe âm thanh hệ thống (loopback) để phân tích phổ.
+  // Chỉ lấy âm thanh; hình ảnh màn hình bị giao diện dừng ngay, không hiện hộp thoại chọn.
+  win.webContents.session.setDisplayMediaRequestHandler((_req, cb) => {
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      .then((src) => cb(src.length ? { video: src[0], audio: 'loopback' } : {}))
+      .catch((e) => { log('loopback:', e.message); cb({}); });
+  });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => updateVisibility());
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone:', JSON.stringify(d)));

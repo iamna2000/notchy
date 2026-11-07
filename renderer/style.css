@@ -45,7 +45,7 @@ input::placeholder { color: var(--label3); }
 
 /* ================== Thu gọn ================== */
 .compact { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 13px; font-weight: 600; transition: opacity .25s ease .2s, filter .25s ease .2s; }
-.island:not([data-mode="compact"]) .compact { opacity: 0; filter: blur(6px); transition-delay: 0s; pointer-events: none; }
+.island:not([data-mode="compact"]):not([data-mode="hover"]) .compact { opacity: 0; filter: blur(6px); transition-delay: 0s; pointer-events: none; }
 .c-center { margin: 0 auto; font-variant-numeric: tabular-nums; letter-spacing: .01em; min-width: 0; }
 .compact.extras:not(.music) .c-center { display: none; }
 .compact.music .c-center { flex: 1; margin: 0; overflow: hidden; display: flex; justify-content: center; }
@@ -64,8 +64,21 @@ input::placeholder { color: var(--label3); }
 @keyframes mq { to { transform: translateX(-50%); } }
 .m-title .mq-i, .m-artist .mq-i { padding-right: 48px; }
 .m-title, .m-artist { -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent); mask-image: linear-gradient(90deg, #000 92%, transparent); }
-.c-pp { color: var(--accent); }
+/* Bên phải: sóng âm (thu gọn) và nút phát/tạm dừng (rê chuột) nằm chồng cùng một ô */
+.compact.music .c-right { display: grid; place-items: center; }
+.c-right > .c-wave, .c-right > .c-pp { grid-area: 1 / 1; transition: opacity .25s ease, transform .45s var(--spring); }
+.c-wave { display: block; width: 19.5px; height: 18px; }
+.c-wave.idle { opacity: .55; }
+.c-pp { width: 32px; height: 32px; border-radius: 16px; color: #fff; opacity: 0; transform: scale(.6); pointer-events: none; }
 .c-pp svg { width: 16px; height: 16px; }
+.c-pp:hover { background: var(--g2); }
+.island[data-mode="hover"] .c-pp { opacity: 1; transform: none; pointer-events: auto; }
+.island[data-mode="hover"] .c-wave { opacity: 0; transform: scale(.6); }
+/* Rê chuột: viên thuốc phóng to, ảnh bìa to theo; bấm vào để mở bảng đầy đủ */
+.c-art { transition: width .8s var(--spring), height .8s var(--spring), border-radius .8s var(--spring); }
+.island[data-mode="hover"] .compact { cursor: pointer; }
+.island[data-mode="hover"] .compact.music { padding: 0 12px 0 9px; }
+.island[data-mode="hover"] .c-art { width: 38px; height: 38px; border-radius: 10px; }
 .c-timer { color: var(--orange); font-variant-numeric: tabular-nums; }
 .c-ico { color: var(--orange); width: 18px; height: 18px; }
 .eq { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
@@ -352,7 +365,7 @@ body.dropping .shelf-list { outline: 1.5px dashed var(--blue); outline-offset: 3
 /* ================== Tiết kiệm GPU: dừng animation vô hạn khi phần chứa nó đang ẩn ==================
    Phần bị ẩn bằng opacity/blur vẫn bị vẽ lại mỗi khung hình nếu animation bên trong còn chạy
    (đo được: ~2/3 tải GPU lúc để yên). Dùng paused thay vì bỏ animation để hiện lại không bị giật. */
-.island:not([data-mode="compact"]) .compact .mq.run,
+.island:not([data-mode="compact"]):not([data-mode="hover"]) .compact .mq.run,
 .island:not([data-mode="open"]) .expanded .mq.run,
 .view:not(.on) .mq.run,
 .island:not([data-mode="open"]) .eq.on i,

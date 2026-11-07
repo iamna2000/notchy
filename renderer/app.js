@@ -105,6 +105,14 @@
   const hasMusic = () => !!(S.media.active && S.media.title && (S.media.status === 'Playing' || S.media.status === 'Paused'));
   const isPlaying = () => S.media.active && S.media.status === 'Playing';
 
+  // Sóng âm ở viên thuốc (xem waveStart/syncWave bên dưới). Khai báo sớm vì applyLayout gọi syncWave.
+  const BANDS = [[60, 250], [250, 1000], [1000, 4000], [4000, 12000]]; // trầm, trung trầm, trung cao, cao
+  const BAND_GAIN = [0.9, 1.0, 1.25, 1.7];                            // dải cao vốn nhỏ hơn: nâng lên cho đều
+  const wave = { cv: null, g: null, hs: '', stream: null, ctx: null, an: null, data: null, raf: 0, lvl: [0, 0, 0, 0], last: 0, starting: false, stopTimer: 0, failed: false };
+  let winOff = false;
+  // Chỉ nghe khi sóng đang thật sự hiện: đang phát, viên thuốc thu gọn, cửa sổ không ẩn
+  const waveWanted = () => !winOff && isPlaying() && !!wave.cv && island.dataset.mode === 'compact';
+
   function viewH() {
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) : 168;
@@ -118,7 +126,9 @@
   }
   function target() {
     if (S.ring) return { mode: 'ring', w: 440, h: 186, r: 40, ear: 16 };
-    if (S.hover || S.peek || S.typing) return { mode: 'open', w: 480, h: viewH(), r: 40, ear: 18 };
+    // Đang có nhạc: rê chuột chỉ phóng to viên thuốc (nút tạm dừng), bấm vào mới mở bảng đầy đủ
+    if (S.peek || S.typing || (S.hover && (S.open || !hasMusic()))) return { mode: 'open', w: 480, h: viewH(), r: 40, ear: 18 };
+    if (S.hover) return { mode: 'hover', w: 400, h: 56, r: 26, ear: 12 };
     if (S.notice) return { mode: 'notice', w: 340, h: 60, r: 30, ear: 15 };
     let c = { w: 156, h: 34, r: 17, ear: 9 };
     if (hasMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
@@ -137,10 +147,11 @@
     island.style.borderRadius = `0 0 ${t.r}px ${t.r}px`;
     island.style.setProperty('--ear', t.ear + 'px');
     api.size(t.w, t.h);
+    syncWave();
   }
   function collapseSoon(ms) {
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => { if (!S.hoverRaw && !S.typing && !drag) { S.hover = false; applyLayout(); } }, ms);
+    closeTimer = setTimeout(() => { if (!S.hoverRaw && !S.typing && !drag) { S.hover = false; S.open = false; applyLayout(); } }, ms);
   }
   api.onHover((v) => {
     S.hoverRaw = v;
@@ -149,7 +160,7 @@
     else collapseSoon(380);
   });
   api.onHidden((v) => { S.hidden = !!v; applyLayout(); });
-  api.onWinVis((v) => document.documentElement.classList.toggle('win-off', !v));
+  api.onWinVis((v) => { winOff = !v; document.documentElement.classList.toggle('win-off', winOff); syncWave(); });
   api.onPeek(() => {
     S.peek = true; applyLayout();
     clearTimeout(peekTimer);
@@ -408,11 +419,107 @@
         const mq = $('.mq', cc);
         mq.style.setProperty('--dur', Math.max(6, mq.firstElementChild.offsetWidth / 32).toFixed(1) + 's');
       } else cc.innerHTML = '';
-      cr.innerHTML = tRun ? '<span class="c-timer" id="cTimer"></span>' : `<span class="c-pp">${isPlaying() ? ICON.pause : ICON.play}</span>`;
+      // Bên phải: sóng âm (thu gọn) và nút phát/tạm dừng (khi rê chuột) chồng lên nhau, đổi qua lại bằng CSS
+      cr.innerHTML = tRun ? '<span class="c-timer" id="cTimer"></span>'
+        : `<canvas class="c-wave ${isPlaying() ? '' : 'idle'}" id="cWave"></canvas>`
+          + `<button class="c-pp" data-act="m-play" aria-label="Phát/Tạm dừng">${isPlaying() ? ICON.pause : ICON.play}</button>`;
+      waveCanvas($('#cWave'));
       if (music) { const a = $('#cArt'); if (S.media.thumb) a.style.backgroundImage = `url("${S.media.thumb}")`; else a.innerHTML = ICON.music; }
     }
     const t = $('#cTimer');
     if (t) t.textContent = fmtTimer(Math.ceil(timerRemaining()));
+    syncWave();
+  }
+
+  /* ----- Sóng âm thật: phân tích phổ âm thanh hệ thống (loopback) thành 4 dải tần ----- */
+  async function waveStart() {
+    if (wave.starting || wave.failed) return;
+    wave.starting = true;
+    try {
+      if (!wave.stream) {
+        wave.stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        wave.stream.getVideoTracks().forEach((t) => t.stop()); // chỉ cần âm thanh
+        if (!wave.stream.getAudioTracks().length) throw new Error('không có luồng âm thanh');
+        wave.ctx = new AudioContext({ latencyHint: 'playback' });
+        wave.an = wave.ctx.createAnalyser();
+        wave.an.fftSize = 1024;               // ~47 Hz mỗi ô ở 48 kHz
+        wave.an.smoothingTimeConstant = 0.35;
+        wave.an.minDecibels = -80; wave.an.maxDecibels = -18;
+        wave.ctx.createMediaStreamSource(wave.stream).connect(wave.an); // không nối ra loa
+        wave.data = new Uint8Array(wave.an.frequencyBinCount);
+      }
+      if (wave.ctx.state !== 'running') await wave.ctx.resume();
+    } catch (e) {
+      wave.failed = true; // không lấy được âm thanh: giữ các thanh đứng yên, không thử lại liên tục
+      console.warn('wave:', e && e.message);
+      waveRelease();
+    }
+    wave.starting = false;
+    syncWave();
+  }
+  function waveRelease() {
+    try { if (wave.stream) wave.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+    try { if (wave.ctx) wave.ctx.close(); } catch (_) {}
+    wave.stream = wave.ctx = wave.an = wave.data = null;
+  }
+  function syncWave() {
+    const want = waveWanted();
+    if (want) {
+      clearTimeout(wave.stopTimer); wave.stopTimer = 0;
+      if (!wave.ctx || wave.ctx.state !== 'running') { waveStart(); return; }
+      if (!wave.raf) { wave.last = 0; wave.raf = requestAnimationFrame(waveFrame); }
+    } else {
+      if (wave.raf) { cancelAnimationFrame(wave.raf); wave.raf = 0; }
+      wave.lvl = [0, 0, 0, 0];
+      waveDraw([4, 4, 4, 4]);
+      // Ngừng vẽ ngay; nhả hẳn luồng nếu không cần trong 30 giây. Không dùng ctx.suspend(): sau khi
+      // resume, nguồn loopback chỉ trả về im lặng (đã gặp thực tế) nên lần sau phải lấy luồng mới.
+      if (wave.stream && !wave.stopTimer) wave.stopTimer = setTimeout(() => { wave.stopTimer = 0; if (!waveWanted()) waveRelease(); }, 30000);
+    }
+  }
+  function waveFrame(ts) {
+    wave.raf = requestAnimationFrame(waveFrame);
+    const dt = wave.last ? Math.min(ts - wave.last, 100) : 16;
+    wave.last = ts;
+    const an = wave.an, d = wave.data;
+    if (!an) return;
+    an.getByteFrequencyData(d);
+    const hz = wave.ctx.sampleRate / an.fftSize;
+    const up = 1 - Math.exp(-dt / 25), down = 1 - Math.exp(-dt / 110); // lên nhanh (~25 ms), xuống êm (~110 ms)
+    for (let i = 0; i < 4; i++) {
+      const a = Math.max(1, Math.round(BANDS[i][0] / hz)), z = Math.min(d.length - 1, Math.round(BANDS[i][1] / hz));
+      let s = 0;
+      for (let k = a; k <= z; k++) s += d[k];
+      const v = Math.min(1, (s / (z - a + 1) / 255) * BAND_GAIN[i]);
+      const cur = wave.lvl[i];
+      wave.lvl[i] = cur + (v - cur) * (v > cur ? up : down);
+    }
+    waveDraw(wave.lvl.map((l) => 4 + l * 14));
+  }
+  // 4 thanh vẽ trên canvas nhỏ: không đụng tới style/layout của trang nên rẻ hơn nhiều so với đổi height của DOM
+  const WAVE_W = 19.5, WAVE_H = 18, BAR_W = 3, BAR_GAP = 2.5;
+  function waveCanvas(cv) {
+    wave.cv = cv; wave.g = null; wave.hs = '';
+    if (!cv) return;
+    const r = window.devicePixelRatio || 1;
+    cv.width = Math.ceil(WAVE_W * r); cv.height = Math.ceil(WAVE_H * r);
+    wave.g = cv.getContext('2d');
+    wave.g.setTransform(r, 0, 0, r, 0, 0);
+    wave.g.fillStyle = '#ebebf0';
+    waveDraw([4, 4, 4, 4]);
+  }
+  function waveDraw(hs) {
+    const g = wave.g;
+    if (!g) return;
+    const r = window.devicePixelRatio || 1;
+    hs = hs.map((h) => Math.round(h * r * 2) / (r * 2)); // làm tròn nửa điểm ảnh thật
+    const key = hs.join(',');
+    if (key === wave.hs) return; // không có gì đổi: không vẽ lại
+    wave.hs = key;
+    g.clearRect(0, 0, WAVE_W, WAVE_H);
+    g.beginPath();
+    hs.forEach((h, i) => g.roundRect(i * (BAR_W + BAR_GAP), (WAVE_H - h) / 2, BAR_W, h, BAR_W / 2));
+    g.fill();
   }
 
   /* ================= Nhắc uống nước ================= */
@@ -869,6 +976,7 @@
       // Nhạc
       case 'm-play': m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
       case 'm-focus': api.media('focus'); break;
+      case 'c-open': if (S.hover) { S.open = true; applyLayout(); requestSys(); } break;
       case 'm-next': api.media('next'); break;
       case 'm-prev': api.media('prev'); break;
       case 'm-shuffle': m.shuffle = !m.shuffle; api.media('shuffle'); musicSig = ''; renderMusic(); break;
