@@ -193,30 +193,54 @@ function pollCursor() {
 }
 
 // ---------- Cầu nối PowerShell ----------
-function spawnPS(file, args, onLine, onExit) {
-  const script = path.join(__dirname, 'scripts', file);
+// Chạy một cầu nối (exe Rust hoặc PowerShell): mỗi dòng stdout là một JSON, lệnh gửi qua stdin
+function spawnBridge(label, cmd, args, onLine, onExit) {
   let proc;
   try {
-    proc = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch (e) { log('spawn', file, e.message); return null; }
+    proc = spawn(cmd, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (e) { log('spawn', label, e.message); return null; }
   readline.createInterface({ input: proc.stdout }).on('line', onLine);
-  proc.stderr.on('data', (d) => log(file, 'stderr:', String(d).slice(0, 300)));
+  proc.stderr.on('data', (d) => log(label, 'stderr:', String(d).slice(0, 300)));
   proc.stdin.on('error', () => {});
-  proc.on('exit', (code) => { log(file, 'exit', code); onExit(); });
+  proc.on('error', (e) => log(label, 'error:', e.message));
+  proc.on('exit', (code) => { log(label, 'exit', code); onExit(); });
   return proc;
+}
+function spawnPS(file, args, onLine, onExit) {
+  const script = path.join(__dirname, 'scripts', file);
+  return spawnBridge(file, 'powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], onLine, onExit);
+}
+// Cầu nối Rust (native/): bản đóng gói đặt ở bin/, bản đang phát triển ở native/target/release/
+function nativeExe(name) {
+  for (const p of [path.join(__dirname, 'bin', name + '.exe'), path.join(__dirname, 'native', 'target', 'release', name + '.exe')]) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 function stopProc(p) { try { if (p) p.kill(); } catch (_) {} }
 function writeProc(p, line) { try { if (p && p.stdin.writable) p.stdin.write(line + '\n'); } catch (_) {} }
 
+let mediaNativeFails = 0; // exe Rust thoát ngay sau khi chạy 3 lần liền -> dùng lại PowerShell
 function startMedia() {
   if (process.platform !== 'win32' || quitting) return;
-  mediaProc = spawnPS('media.ps1', ['-ParentPid', String(process.pid)], (line) => {
+  const onLine = (line) => {
     let m;
     try { m = JSON.parse(line); } catch (_) { return; }
     if (m.type === 'fs') { fsHidden = !!m.value; updateVisibility(); }
     else if (m.type === 'cover') { covered = !!m.value; }
     else send('media', m);
-  }, () => { mediaProc = null; if (!quitting) setTimeout(startMedia, 5000); });
+  };
+  const exe = mediaNativeFails < 3 ? nativeExe('di-media') : null;
+  const startedAt = Date.now();
+  const onExit = () => {
+    mediaProc = null;
+    if (exe && Date.now() - startedAt < 10000 && ++mediaNativeFails >= 3) log('di-media lỗi liên tục, chuyển sang media.ps1');
+    if (!quitting) setTimeout(startMedia, exe && mediaNativeFails < 3 ? 1000 : 5000);
+  };
+  mediaProc = exe
+    ? spawnBridge('di-media', exe, ['--parent-pid', String(process.pid)], onLine, onExit)
+    : spawnPS('media.ps1', ['-ParentPid', String(process.pid)], onLine, onExit);
+  if (mediaProc) log('media bridge:', exe ? 'di-media (Rust)' : 'media.ps1');
   sendProbe();
 }
 function sendProbe() {
