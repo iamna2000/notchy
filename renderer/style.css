@@ -235,11 +235,17 @@ input::placeholder { color: var(--label3); }
 
 /* ----- Chế độ tuần: 7 thẻ ngày ----- */
 .cw { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px; }
-.cw-d { position: relative; height: 64px; border-radius: 14px; background: var(--g1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background-color .2s; }
+.cw-d { position: relative; height: 72px; border-radius: 14px; background: var(--g1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background-color .2s; }
 .cw-d:hover { background: var(--g2); }
 .cw-d.sel { background: var(--g3); }
 .cw-d span { font-size: 10px; font-weight: 600; color: var(--label2); }
-.cw-d b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cw-d b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; transition: color .25s; }
+.cw-d span { transition: color .25s; }
+/* Ngày âm lịch dưới số ngày; mùng 1 ghi cả tháng, màu cam */
+.lu { font-size: 9.5px; font-weight: 500; color: var(--label3); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.lu.first { color: var(--orange); font-weight: 600; }
+.cw-d.sel .lu { color: var(--label2); }
+.cw-d.sel .lu.first { color: var(--orange); }
 .cw-d.today span, .cw-d.today b { color: #b9a6ff; }
 .cw-d.off b { color: #ff6961; }
 .cw-d.today.off b { color: #b9a6ff; }
@@ -281,17 +287,22 @@ input::placeholder { color: var(--label3); }
 .cm-grid { position: relative; row-gap: 2px; }
 /* Cột cuối tuần có nền tô nhẹ */
 .cm-grid::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(100% * 5 / 7); right: 0; border-radius: 10px; background: rgba(255, 255, 255, .045); pointer-events: none; }
-.cm-d { position: relative; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 9px; }
+.cm-d { position: relative; height: 38px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; cursor: pointer; border-radius: 9px; transition: background-color .22s; }
+.cm-d .lu { font-size: 8.5px; }
+.cm-d.other .lu { opacity: .5; }
 .cm-d b { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; position: relative; z-index: 1; }
-.cm-d:hover b::before, .cm-d.sel b::before { content: ""; position: absolute; inset: -5px -7px; border-radius: 8px; background: var(--g2); z-index: -1; }
-.cm-d.sel b::before { background: var(--g3); }
+.cm-d:hover { background: var(--g2); }
+.cm-d.sel { background: var(--g3); }
 .cm-d.other b { color: var(--label3); }
 .cm-d.off b { color: #ff6961; }
 .cm-d.today b { color: #b9a6ff; font-weight: 700; }
 .cm-d em { bottom: 1px; }
-.cm-right { min-width: 0; height: 236px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.cm-d b { line-height: 1.1; transition: color .25s; }
+.cm-right { min-width: 0; height: 258px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .cm-right::-webkit-scrollbar { width: 0; }
 .cm-sec { font-size: 10.5px; font-weight: 600; color: var(--label3); letter-spacing: .02em; margin: 2px 0 -1px 2px; flex: none; }
+.cm-sec span { margin-left: 6px; font-weight: 500; color: var(--label3); opacity: .8; }
+.cm-sel { display: flex; flex-direction: column; gap: 6px; }
 .hl { cursor: pointer; }
 .hl:hover { background: var(--g2); }
 .hl.static { cursor: default; }

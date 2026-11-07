@@ -132,7 +132,7 @@
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) : 168;
       case 'sys': return 302;
-      case 'calendar': return S.calMonth ? 344 : 256 + Math.min(3, calEvents()) * 46;
+      case 'calendar': return S.calMonth ? 368 : 264 + Math.min(3, calEvents()) * 46;
       case 'alarm': return 312;
       case 'clip': return 352;
       case 'shelf': return 332;
@@ -800,63 +800,125 @@
     const hs = holidaysOf(d), n = notesOf(d).length;
     return (hs.length ? `<i class="${hs.some((h) => h.off) ? 'hol' : 'hol2'}"></i>` : '') + (n ? '<i></i>' : '');
   };
+  // ----- Hiệu ứng chuyển cảnh (chỉ transform + opacity, Web Animations; tắt nếu hệ thống giảm chuyển động) -----
+  const reduceMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+  const EASE = 'cubic-bezier(.2, .8, .2, 1)';
+  function anim(el, frames, ms = 280) {
+    if (!el || reduceMotion.matches) return;
+    try { el.animate(frames, { duration: ms, easing: EASE }); } catch (_) {}
+  }
+  const fadeUp = (el, dy = 5, ms = 260) => anim(el, [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: 'none' }], ms);
+  // Đổi chữ có hiệu ứng mờ dần (chỉ khi chữ thực sự đổi)
+  function setTextAnim(el, text) {
+    if (!el || el.textContent === text) return;
+    el.textContent = text;
+    fadeUp(el, 4, 240);
+  }
+  const lunarLabel = (l) => (l.d === 1 ? `${l.d}/${l.m}` : String(l.d)); // mùng 1 ghi cả tháng âm
+
+  // Trạng thái lần vẽ trước: chỉ dựng lại khi đổi tuần / tháng / chế độ; chọn ngày khác thì chỉ đổi class
+  let calLast = { key: '', mode: null, anchor: 0, sel: 0 };
+  function cellClass(d, base, t0, sel, other) {
+    return [base, other ? 'other' : '', d.getTime() === t0.getTime() ? 'today' : '', d.getTime() === sel.getTime() ? 'sel' : '',
+      holidaysOf(d).some((h) => h.off) ? 'off' : '', d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''].filter(Boolean).join(' ');
+  }
   function renderCalendar() {
     const t0 = today0(), sel = S.sel, month = S.calMonth;
-    $('#calTitle').textContent = `Tháng ${sel.getMonth() + 1} năm ${sel.getFullYear()}`;
+    const ws = weekStart(sel);
+    const anchor = month ? new Date(sel.getFullYear(), sel.getMonth(), 1).getTime() : ws.getTime();
+    const key = (month ? 'm' : 'w') + anchor + '|' + ymd(t0);
+    setTextAnim($('#calTitle'), `Tháng ${sel.getMonth() + 1} năm ${sel.getFullYear()}`);
     $('#calExp').innerHTML = month ? ICON.collapse : ICON.expand;
-    $('#calExp').classList.toggle('on', month);
     $('#calPrev').innerHTML = month ? ICON.up : ICON.left;
     $('#calNext').innerHTML = month ? ICON.down : ICON.right;
-    // "Hôm nay" chỉ hiện khi đang không xem ngày hôm nay
-    $('#calTodayBtn').classList.toggle('show', sel.getTime() !== t0.getTime());
+    const tb = $('#calTodayBtn'), showToday = sel.getTime() !== t0.getTime();
+    if (showToday !== tb.classList.contains('show')) { tb.classList.toggle('show', showToday); if (showToday) anim(tb, [{ opacity: 0, transform: 'scale(.85)' }, { opacity: 1, transform: 'none' }], 220); }
     $('.view[data-view="calendar"]').classList.toggle('month', month);
-    const cls = (d, extra) => [extra, d.getTime() === t0.getTime() ? 'today' : '', d.getTime() === sel.getTime() ? 'sel' : '',
-      holidaysOf(d).some((h) => h.off) ? 'off' : '', d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''].filter(Boolean).join(' ');
+
+    const body = $('#calBody');
+    if (key !== calLast.key) {
+      // Dựng lại: đổi tuần / tháng / chế độ
+      if (!month) {
+        const days = Array.from({ length: 7 }, (_, i) => new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + i));
+        body.innerHTML = '<div class="cw">' + days.map((d) => {
+          const l = lunarOf(d);
+          return `<div class="${cellClass(d, 'cw-d', t0, sel)}" data-act="cal-pick" data-ts="${d.getTime()}">
+            <span>${WD_SHORT[d.getDay()]}</span><b>${d.getDate()}</b><small class="lu ${l.d === 1 ? 'first' : ''}">${lunarLabel(l)}</small><em>${dotsOf(d)}</em>
+          </div>`;
+        }).join('') + '</div>';
+      } else {
+        const first = new Date(sel.getFullYear(), sel.getMonth(), 1), offset = (first.getDay() + 6) % 7;
+        const rows = Math.ceil((offset + new Date(sel.getFullYear(), sel.getMonth() + 1, 0).getDate()) / 7);
+        let cells = '';
+        for (let i = 0; i < rows * 7; i++) {
+          const d = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i), l = lunarOf(d), hn = holidayOf(d);
+          cells += `<div class="${cellClass(d, 'cm-d', t0, sel, d.getMonth() !== sel.getMonth())}" data-act="cal-pick" data-ts="${d.getTime()}" title="Âm lịch ${l.d}/${l.m}${l.leap ? ' nhuận' : ''}${hn ? ' · ' + esc(hn) : ''}"><b>${d.getDate()}</b><small class="lu ${l.d === 1 ? 'first' : ''}">${lunarLabel(l)}</small><em>${dotsOf(d)}</em></div>`;
+        }
+        const wd = MON_FIRST.map((d) => `<span class="${d === 0 || d === 6 ? 'we' : ''}">${WD_SHORT[d]}</span>`).join('');
+        body.innerHTML = `<div class="cm"><div class="cm-left"><div class="cm-wd">${wd}</div><div class="cm-grid">${cells}</div></div><div class="cm-right" id="cmRight"></div></div>`;
+      }
+      // Hiệu ứng: đổi chế độ -> mờ chéo + phóng nhẹ; đổi tuần -> trượt ngang; đổi tháng -> trượt dọc (theo hướng)
+      const dir = anchor > calLast.anchor ? 1 : -1;
+      if (calLast.mode !== null && calLast.mode !== month) anim(body, [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], 320);
+      else if (calLast.mode === month && !month) anim($('.cw', body), [{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: 'none' }], 300);
+      else if (calLast.mode === month && month) anim($('.cm-grid', body), [{ opacity: 0, transform: `translateY(${dir * 18}px)` }, { opacity: 1, transform: 'none' }], 300);
+    } else {
+      // Cùng tuần/tháng: chỉ đổi class (nền ô chuyển màu bằng CSS transition) và chấm sự kiện
+      $$('.cw-d, .cm-d', body).forEach((c) => { // chỉ ô ngày (không đụng danh sách ngày lễ bên phải)
+        const d = new Date(Number(c.dataset.ts));
+        c.classList.toggle('sel', d.getTime() === sel.getTime());
+        c.classList.toggle('today', d.getTime() === t0.getTime());
+        const em = $('em', c), dots = dotsOf(d);
+        if (em && em.innerHTML !== dots) em.innerHTML = dots;
+      });
+    }
+    const selChanged = sel.getTime() !== calLast.sel;
+    calLast = { key, mode: month, anchor, sel: sel.getTime() };
+
     if (!month) {
-      // Dải tuần: thẻ có thứ + số ngày + chấm
-      const ws = weekStart(sel);
-      const days = Array.from({ length: 7 }, (_, i) => new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + i));
-      $('#calBody').innerHTML = '<div class="cw">' + days.map((d) => `
-        <div class="${cls(d, 'cw-d')}" data-act="cal-pick" data-ts="${d.getTime()}">
-          <span>${WD_SHORT[d.getDay()]}</span><b>${d.getDate()}</b><em>${dotsOf(d)}</em>
-        </div>`).join('') + '</div>';
       const l = lunarOf(sel);
-      $('#dtHead').innerHTML = `<div>${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}</div><span>Âm lịch ${l.d}/${l.m}${l.leap ? ' nhuận' : ''} · ${window.Lunar.canChi(l.y)}</span>`;
-      renderNotes();
-      return;
-    }
-    // Cả tháng: lưới bên trái, ngày lễ sắp tới bên phải
-    const first = new Date(sel.getFullYear(), sel.getMonth(), 1), offset = (first.getDay() + 6) % 7;
-    const rows = Math.ceil((offset + new Date(sel.getFullYear(), sel.getMonth() + 1, 0).getDate()) / 7);
-    let cells = '';
-    for (let i = 0; i < rows * 7; i++) {
-      const d = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i);
-      const l = lunarOf(d);
-      cells += `<div class="${cls(d, d.getMonth() !== sel.getMonth() ? 'cm-d other' : 'cm-d')}" data-act="cal-pick" data-ts="${d.getTime()}" title="Âm lịch ${l.d}/${l.m}${holidayOf(d) ? ' · ' + esc(holidayOf(d)) : ''}"><b>${d.getDate()}</b><em>${dotsOf(d)}</em></div>`;
-    }
-    const wd = MON_FIRST.map((d) => `<span class="${d === 0 || d === 6 ? 'we' : ''}">${WD_SHORT[d]}</span>`).join('');
-    // Bên phải: sự kiện của ngày đang chọn (nếu có) rồi ngày lễ lớn sắp tới
-    const selItems = [...holidaysOf(sel).map((h) => ({ t: h.name, s: h.lunar ? 'Lễ âm lịch' : 'Ngày lễ', c: h.off ? 'red' : 'blue' })),
+      const head = `<div>${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}</div><span>Âm lịch ${l.d}/${l.m}${l.leap ? ' nhuận' : ''} · ${window.Lunar.canChi(l.y)}</span>`;
+      const dh = $('#dtHead');
+      if (dh.innerHTML !== head) { dh.innerHTML = head; if (selChanged) fadeUp(dh); }
+      renderNotes(selChanged);
+    } else renderCalRight(selChanged);
+  }
+  // Bên phải chế độ tháng: ngày đang chọn (dương + âm lịch, sự kiện) rồi ngày lễ lớn sắp tới
+  function renderCalRight(selChanged) {
+    const box = $('#cmRight');
+    if (!box) return;
+    const sel = S.sel, l = lunarOf(sel);
+    const items = [...holidaysOf(sel).map((h) => ({ t: h.name, s: h.lunar ? 'Lễ âm lịch' : 'Ngày lễ', c: h.off ? 'red' : 'blue' })),
       ...notesOf(sel).map((n) => ({ t: n.t, s: n.at || 'Ghi chú', c: 'orange' }))];
+    const selHtml = `<div class="cm-sel"><div class="cm-sec">${WD_SHORT[sel.getDay()]} ${sel.getDate()}/${sel.getMonth() + 1}<span>Âm lịch ${l.d}/${l.m}${l.leap ? ' nhuận' : ''} · ${window.Lunar.canChi(l.y)}</span></div>`
+      + items.map((x) => `<div class="hl ${x.c} static"><div class="hl-t"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></div></div>`).join('') + '</div>';
     const up = upcomingHolidays().map((h) => `
-      <div class="hl ${h.off ? 'red' : 'blue'}" data-act="cal-pick" data-ts="${h.d.getTime()}" data-month="1">
+      <div class="hl ${h.off ? 'red' : 'blue'}" data-act="cal-pick" data-ts="${h.d.getTime()}">
         <div class="hl-t"><b>${esc(h.name)}</b><span class="hl-sub"><span>${h.d.getDate()}/${h.d.getMonth() + 1} · ${WD_SHORT[h.d.getDay()]}${h.lunar ? ' · âm' : ''}</span><em class="${h.days <= 7 ? 'soon' : ''}">${countdown(h.days)}</em></span></div>
       </div>`).join('');
-    $('#calBody').innerHTML = `
-      <div class="cm">
-        <div class="cm-left"><div class="cm-wd">${wd}</div><div class="cm-grid">${cells}</div></div>
-        <div class="cm-right">
-          ${selItems.length ? `<div class="cm-sec">${sel.getDate()}/${sel.getMonth() + 1}</div>${selItems.map((x) => `<div class="hl ${x.c} static"><div class="hl-t"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></div></div>`).join('')}` : ''}
-          <div class="cm-sec">Ngày lễ sắp tới</div>${up}
-        </div>
-      </div>`;
+    const upHtml = `<div class="cm-sec">Ngày lễ sắp tới</div>${up}`;
+    // Danh sách ngày lễ giữ nguyên (không nháy, giữ vị trí cuộn); chỉ thay phần ngày đang chọn
+    let selBox = $('.cm-sel', box);
+    if (!selBox || !box.dataset.up || box.dataset.up !== ymd(today0())) {
+      box.innerHTML = selHtml + upHtml;
+      box.dataset.up = ymd(today0());
+      selBox = $('.cm-sel', box);
+    } else if (selBox.outerHTML !== selHtml) {
+      selBox.outerHTML = selHtml;
+      selBox = $('.cm-sel', box);
+    }
+    if (selChanged) fadeUp(selBox);
   }
   // Sự kiện của ngày đang chọn (chế độ tuần): thẻ có vạch màu bên trái
-  function renderNotes() {
+  function renderNotes(animate) {
     const sel = S.sel, when = `${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}`;
     const hol = holidaysOf(sel).map((h) => `<div class="ev ${h.off ? 'red' : 'blue'}"><div class="ev-t"><b>${esc(h.name)}</b><span>${h.lunar ? 'Lễ âm lịch' : 'Ngày lễ'}</span></div></div>`).join('');
     const notes = notesOf(sel).map((n) => `<div class="ev orange"><div class="ev-t"><b>${esc(n.t)}</b><span>${n.at ? n.at + ' · ' : ''}${when}</span></div><button data-act="note-del" data-id="${n.id}" aria-label="Xóa">${ICON.x}</button></div>`).join('');
-    $('#notes').innerHTML = hol + notes;
+    const box = $('#notes'), html = hol + notes;
+    if (box.innerHTML === html) return;
+    box.innerHTML = html;
+    // Thẻ hiện lần lượt (so le 40 ms)
+    if (animate !== false) $$('.ev', box).forEach((e, i) => anim(e, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], 260 + i * 40));
   }
   // Số sự kiện hiện ở chế độ tuần (để tính chiều cao bảng)
   const calEvents = () => holidaysOf(S.sel).length + notesOf(S.sel).length;
