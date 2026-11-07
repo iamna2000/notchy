@@ -146,6 +146,7 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => updateVisibility());
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone:', JSON.stringify(d)));
+  win.webContents.on('did-finish-load', () => resendMedia()); // giao diện (tải lại) sẵn sàng: gửi lại nhạc + ảnh bìa
   win.on('closed', () => { win = null; });
   // backgroundThrottling tắt (để báo thức chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
   // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
@@ -241,6 +242,17 @@ function nativeExe(name) {
 function stopProc(p) { try { if (p) p.kill(); } catch (_) {} }
 function writeProc(p, line) { try { if (p && p.stdin.writable) p.stdin.write(line + '\n'); } catch (_) {} }
 
+// Nhớ trạng thái nhạc gần nhất kèm ảnh bìa. Cầu nối chỉ gửi ảnh bìa MỘT lần mỗi bài; nếu giao diện chưa
+// tải xong (di-media khởi động gần như tức thì) hoặc tải lại thì ảnh bị mất -> gửi lại khi giao diện sẵn sàng.
+let lastMedia = null, lastThumb = '';
+function rememberMedia(m) {
+  if (!lastMedia || lastMedia.key !== m.key) lastThumb = '';
+  if (typeof m.thumb === 'string') lastThumb = m.thumb;
+  lastMedia = m;
+}
+function resendMedia() {
+  if (lastMedia) send('media', lastMedia.active ? { ...lastMedia, thumb: lastThumb } : lastMedia);
+}
 let mediaNativeFails = 0; // exe Rust thoát ngay sau khi chạy 3 lần liền -> dùng lại PowerShell
 function startMedia() {
   if (process.platform !== 'win32' || quitting) return;
@@ -249,7 +261,7 @@ function startMedia() {
     try { m = JSON.parse(line); } catch (_) { return; }
     if (m.type === 'fs') { fsHidden = !!m.value; updateVisibility(); }
     else if (m.type === 'cover') { covered = !!m.value; }
-    else send('media', m);
+    else { if (m.type === 'media') rememberMedia(m); send('media', m); }
   };
   const exe = mediaNativeFails < 3 ? nativeExe('di-media') : null;
   const startedAt = Date.now();

@@ -280,7 +280,17 @@ struct MediaState {
     last_key: String,
     thumb_ok: bool,
     thumb_tries: u32,
+    cur_thumb: u64,  // băm ảnh bìa đã nhận cho bài hiện tại
+    prev_thumb: u64, // băm ảnh bìa của bài trước (để nhận ra ảnh cũ chưa kịp đổi)
 }
+fn hash_str(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+// Sau khi đổi bài, ảnh giống hệt bài trước thì coi như chưa có ảnh mới, đọc lại trong ~6 lần hỏi
+const STALE_TRIES: u32 = 6;
 
 fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
     let Ok(s) = mgr.GetCurrentSession() else {
@@ -323,6 +333,8 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
         ms.last_key = key;
         ms.thumb_ok = false;
         ms.thumb_tries = 0;
+        ms.prev_thumb = ms.cur_thumb;
+        ms.cur_thumb = 0;
         msg["thumb"] = json!("");
     }
     // Ảnh bìa thường đến trễ hơn tên bài (Spotify, YouTube): thử lại mỗi lần hỏi, tối đa 40 lần
@@ -330,8 +342,13 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
         ms.thumb_tries += 1;
         match read_thumb(&props) {
             Ok(t) if !t.is_empty() => {
-                ms.thumb_ok = true;
-                msg["thumb"] = json!(t);
+                let h = hash_str(&t);
+                // Trình phát thường đổi tên bài trước, ảnh bìa sau: ảnh vẫn là của bài trước thì đợi thêm
+                if !(h == ms.prev_thumb && ms.thumb_tries < STALE_TRIES) {
+                    ms.thumb_ok = true;
+                    ms.cur_thumb = h;
+                    msg["thumb"] = json!(t);
+                }
             }
             Ok(_) => {}
             Err(e) => {
@@ -451,7 +468,7 @@ fn main() {
         }
     };
 
-    let mut ms = MediaState { last_key: String::new(), thumb_ok: false, thumb_tries: 0 };
+    let mut ms = MediaState { last_key: String::new(), thumb_ok: false, thumb_tries: 0, cur_thumb: 0, prev_thumb: 0 };
     let mut probe: Vec<(i32, i32)> = Vec::new();
     let mut last_cover: Option<bool> = None;
     let mut last_fs: Option<bool> = None;
