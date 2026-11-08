@@ -160,6 +160,7 @@ struct FocusQ {
     title: String,
     best: HWND,
     first: HWND,
+    all: Vec<HWND>, // mọi cửa sổ của trình phát (trình duyệt có thể có nhiều cửa sổ)
 }
 unsafe extern "system" fn focus_cb(h: HWND, l: LPARAM) -> BOOL {
     let q = &mut *(l.0 as *mut FocusQ);
@@ -182,19 +183,80 @@ unsafe extern "system" fn focus_cb(h: HWND, l: LPARAM) -> BOOL {
     if q.first.is_invalid() {
         q.first = h;
     }
-    if !q.title.is_empty() && text.to_lowercase().contains(&q.title) {
+    q.all.push(h);
+    if q.best.is_invalid() && !q.title.is_empty() && text.to_lowercase().contains(&q.title) {
         q.best = h;
-        return false.into();
     }
     true.into()
 }
-fn focus_app(names: Vec<String>, title: &str) -> bool {
-    let mut q = FocusQ { names, title: title.trim().to_lowercase(), best: HWND::default(), first: HWND::default() };
+
+// ---------- Chọn đúng tab đang phát trong trình duyệt (UI Automation) ----------
+// Tiêu đề cửa sổ trình duyệt chỉ là tab đang mở; tab đang phát có thể nằm sau. Đọc thanh tab qua UI Automation:
+// tìm tab có tên chứa tên bài, không có thì tab mang nhãn "đang phát âm thanh", rồi chọn tab đó.
+// Chỉ duyệt khung giao diện (bỏ qua nội dung trang web - Document) để nhanh và không bật chế độ trợ năng của trang.
+const AUDIO_TAB_MARKS: [&str; 3] = ["audio playing", "đang phát âm thanh", "playing audio"];
+fn select_media_tab(wins: &[HWND], title: &str) -> Option<HWND> {
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationSelectionItemPattern,
+        UIA_DocumentControlTypeId, UIA_SelectionItemPatternId, UIA_TabItemControlTypeId,
+    };
+    unsafe {
+        let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let walker = uia.ControlViewWalker().ok()?;
+        let title = title.trim().to_lowercase();
+        // (cửa sổ, tab, khớp tên bài?)
+        let mut by_title: Option<(HWND, IUIAutomationElement)> = None;
+        let mut by_audio: Option<(HWND, IUIAutomationElement)> = None;
+        for &w in wins {
+            let Ok(root) = uia.ElementFromHandle(w) else { continue };
+            let mut queue = std::collections::VecDeque::from([(root, 0u32)]);
+            let mut seen = 0;
+            while let Some((el, depth)) = queue.pop_front() {
+                seen += 1;
+                if seen > 600 { break; }
+                let ct = el.CurrentControlType().unwrap_or_default();
+                if ct == UIA_TabItemControlTypeId {
+                    let name = el.CurrentName().map(|b| b.to_string().to_lowercase()).unwrap_or_default();
+                    if by_title.is_none() && !title.is_empty() && name.contains(&title) {
+                        by_title = Some((w, el.clone()));
+                    } else if by_audio.is_none() && AUDIO_TAB_MARKS.iter().any(|m| name.contains(m)) {
+                        by_audio = Some((w, el.clone()));
+                    }
+                    continue;
+                }
+                if ct == UIA_DocumentControlTypeId || depth >= 14 { continue; }
+                let mut child = walker.GetFirstChildElement(&el).ok();
+                while let Some(c) = child {
+                    child = walker.GetNextSiblingElement(&c).ok();
+                    queue.push_back((c, depth + 1));
+                }
+            }
+            if by_title.is_some() { break; }
+        }
+        let (w, tab) = by_title.or(by_audio)?;
+        let pat: IUIAutomationSelectionItemPattern = tab.GetCurrentPatternAs(UIA_SelectionItemPatternId).ok()?;
+        pat.Select().ok()?;
+        Some(w)
+    }
+}
+
+fn focus_app(names: Vec<String>, title: &str, browser: bool) -> bool {
+    let mut q = FocusQ { names, title: title.trim().to_lowercase(), best: HWND::default(), first: HWND::default(), all: Vec::new() };
     unsafe {
         let _ = EnumWindows(Some(focus_cb), LPARAM(&mut q as *mut FocusQ as isize));
-        let w = if !q.best.is_invalid() { q.best } else { q.first };
+        let mut w = if !q.best.is_invalid() { q.best } else { q.first };
         if w.is_invalid() {
             return false;
+        }
+        // Trình duyệt: chuyển sang đúng tab đang phát (và đúng cửa sổ chứa tab đó)
+        if browser {
+            let mut order = q.all.clone();
+            if let Some(i) = order.iter().position(|&x| x == w) { order.swap(0, i); } // xét cửa sổ khớp tiêu đề trước
+            match select_media_tab(&order, title) {
+                Some(tw) => w = tw,
+                None => log_err("focus: khong tim thay tab dang phat, chi mo cua so trinh duyet"),
+            }
         }
         if IsIconic(w).as_bool() {
             let _ = ShowWindow(w, SW_RESTORE);
@@ -217,8 +279,14 @@ fn focus_app(names: Vec<String>, title: &str) -> bool {
         true
     }
 }
-// Đoán tên tiến trình từ AUMID của phiên nhạc
-fn player_names(aumid: &str) -> Vec<String> {
+// Đoán tên tiến trình từ AUMID của phiên nhạc; kèm cờ "là trình duyệt" (để chọn đúng tab)
+const BROWSERS: [&str; 6] = ["msedge", "chrome", "firefox", "brave", "opera", "browser"];
+fn player_names(aumid: &str) -> (Vec<String>, bool) {
+    let names = player_names_only(aumid);
+    let browser = names.iter().any(|n| BROWSERS.iter().any(|b| n.eq_ignore_ascii_case(b)));
+    (names, browser)
+}
+fn player_names_only(aumid: &str) -> Vec<String> {
     let a = aumid.to_lowercase();
     let v: &[&str] = if a.contains("spotify") {
         &["Spotify"]
@@ -391,7 +459,8 @@ fn run_command(mgr: Option<&Manager>, cmd: &str) {
                 .and_then(|p| p.Title())
                 .map(|h| h.to_string())
                 .unwrap_or_default();
-            let ok = focus_app(player_names(&aumid), &title);
+            let (names, browser) = player_names(&aumid);
+            let ok = focus_app(names, &title, browser);
             // Không có cửa sổ hiện (vd. Spotify đang ẩn dưới khay): kích hoạt lại ứng dụng đóng gói qua shell
             if !ok && aumid.contains('!') {
                 let _ = std::process::Command::new("explorer.exe").arg(format!("shell:AppsFolder\\{}", aumid)).spawn();
