@@ -392,8 +392,10 @@ fn hash_str(s: &str) -> u64 {
     s.hash(&mut h);
     h.finish()
 }
-// Sau khi đổi bài, ảnh giống hệt bài trước thì coi như chưa có ảnh mới, đọc lại trong ~6 lần hỏi
-const STALE_TRIES: u32 = 6;
+// Sau khi đổi bài, ảnh giống hệt bài trước thì coi như chưa có ảnh mới, đọc lại trong ~8 lần hỏi (~1,6 giây ở nhịp nhanh)
+const STALE_TRIES: u32 = 8;
+// Đang chờ ảnh bìa của bài mới: hỏi nhanh (200 ms) trong ~25 lần đầu (~5 giây), sau đó về nhịp 1 giây
+const FAST_THUMB_TRIES: u32 = 25;
 
 fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
     let Ok(s) = mgr.GetCurrentSession() else {
@@ -721,7 +723,8 @@ fn main() {
                     emit(json!({ "type": "error", "msg": format!("Nhac: {}", e.message()) }));
                 }
             }
-            let gap = if burst > 0 { burst -= 1; 200 } else { 1000 };
+            let waiting_thumb = !ms.thumb_ok && ms.thumb_tries < FAST_THUMB_TRIES && !ms.last_key.is_empty();
+            let gap = if burst > 0 { burst -= 1; 200 } else if waiting_thumb { 200 } else { 1000 };
             next_media = now + Duration::from_millis(gap);
         }
 
