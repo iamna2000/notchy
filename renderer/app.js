@@ -50,6 +50,7 @@
     right: L('<path d="m9.5 6 6 6-6 6"/>', 2),
     up: L('<path d="m6 14.5 6-6 6 6"/>', 2),
     down: L('<path d="m6 9.5 6 6 6-6"/>', 2),
+    lock: L('<rect x="5" y="10.5" width="14" height="10" rx="2.4"/><path d="M8.2 10.5V8a3.8 3.8 0 0 1 7.6 0v2.5"/>', 2),
     expand: L('<path d="M12 4.5v10M7.5 10 12 14.5 16.5 10M5.5 19h13"/>', 2),
     collapse: L('<path d="M12 19.5v-10M7.5 14 12 9.5l4.5 4.5M5.5 5h13"/>', 2),
     up: L('<path d="m6 14.5 6-6 6 6"/>'),
@@ -130,7 +131,7 @@
 
   function viewH() {
     switch (S.tab) {
-      case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) : 168;
+      case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) + (S.media.override ? 30 : 0) : 168;
       case 'sys': return 302;
       case 'calendar': return S.calMonth ? 368 : 264 + Math.min(3, calEvents()) * 46;
       case 'alarm': return 312;
@@ -287,7 +288,9 @@
         }
         if (same && now - cmdAt < 900 && status !== prev.status) { status = prev.status; pos = prev.pos; base = prev.base; }
         const thumb = m.thumb !== undefined ? m.thumb : (same ? prev.thumb : '');
-        S.media = { active: true, key: m.key, title: m.title, artist: m.artist, album: m.album, app: m.app, status, pos, base, dur: m.live ? 0 : m.dur, live: !!m.live, rate: m.rate || 1, shuffle: !!m.shuffle, seekAt, cmdAt, thumb };
+        S.media = { active: true, key: m.key, title: m.title, artist: m.artist, album: m.album, app: m.app, status, pos, base, dur: m.live ? 0 : m.dur, live: !!m.live, rate: m.rate || 1, shuffle: !!m.shuffle, seekAt, cmdAt, thumb,
+          // Tab tắt tiếng giành chỗ nguồn của trình duyệt: đang hiện nguồn có tiếng, nút điều khiển bị khóa (ctl: tab giành chỗ)
+          override: !!m.override, ctl: m.ctl || '' };
         if (status === 'Playing') lastPlayingAt = now; else if (!same) lastPlayingAt = 0;
         if (thumb !== (prev.thumb || '')) setAccent(thumb);
       }
@@ -301,7 +304,7 @@
   function renderMusic() {
     const body = $('#musicBody');
     const m = S.media;
-    const sig = JSON.stringify([m.active, m.key, m.status, (m.thumb || '').length, S.mediaError, m.dur > 0, !!m.live, !!m.shuffle, S.outOpen]);
+    const sig = JSON.stringify([m.active, m.key, m.status, (m.thumb || '').length, S.mediaError, m.dur > 0, !!m.live, !!m.shuffle, S.outOpen, !!m.override]);
     $('#musicOut').classList.toggle('on', S.outOpen && hasMusic());
     if (sig === musicSig) { updateProgress(); return; }
     musicSig = sig;
@@ -320,7 +323,8 @@
       ${m.live
         ? '<div class="m-prog live"><span class="live-tag"><i></i>LIVE</span><div class="bar"><i></i></div></div>'
         : `<div class="m-prog"><span id="mPos">0:00</span><div class="bar" id="mBar"><i id="mFill"></i><b id="mKnob"></b></div><span id="mRem">${hasDur ? '-0:00' : '--:--'}</span></div>`}
-      <div class="m-ctrls">
+      ${m.override ? `<div class="m-lock">${ICON.lock || ''}<span>Nút điều khiển đang bị ${esc(appName(m.app) || 'trình duyệt')} gán cho tab “${esc(m.ctl)}” (tắt tiếng). Bấm ảnh bìa để mở tab đang phát.</span></div>` : ''}
+      <div class="m-ctrls ${m.override ? 'locked' : ''}">
         <button data-act="m-shuffle" class="${m.shuffle ? 'on' : 'dim'}" aria-label="Phát ngẫu nhiên">${ICON.shuffle}</button>
         <button data-act="m-prev" aria-label="Bài trước">${ICON.prev}</button>
         <button class="play" data-act="m-play" aria-label="Phát/Tạm dừng">${m.status === 'Playing' ? ICON.pause : ICON.play}</button>
@@ -487,7 +491,7 @@
       }
       return;
     }
-    const sig = [music, tRun, music ? (S.media.thumb || '').length : 0, isPlaying(), music ? S.media.title + S.media.artist : ''].join('|');
+    const sig = [music, tRun, music ? (S.media.thumb || '').length : 0, isPlaying(), music ? S.media.title + S.media.artist : '', !!S.media.override].join('|');
     if (sig !== compactSig) {
       compactSig = sig;
       cl.innerHTML = music ? '<div class="c-art" id="cArt"></div>' : `<span class="c-ico">${ICON.hourglass}</span>`;
@@ -500,7 +504,7 @@
       // Bên phải: sóng âm (thu gọn) và nút phát/tạm dừng (khi rê chuột) chồng lên nhau, đổi qua lại bằng CSS
       cr.innerHTML = tRun ? '<span class="c-timer" id="cTimer"></span>'
         : `<canvas class="c-wave ${isPlaying() ? '' : 'idle'}" id="cWave"></canvas>`
-          + `<button class="c-pp" data-act="m-play" aria-label="Phát/Tạm dừng">${isPlaying() ? ICON.pause : ICON.play}</button>`;
+          + `<button class="c-pp ${S.media.override ? 'locked' : ''}" data-act="m-play" aria-label="Phát/Tạm dừng">${isPlaying() ? ICON.pause : ICON.play}</button>`;
       waveCanvas('c', $('#cWave'));
       if (music) { const a = $('#cArt'); if (S.media.thumb) a.style.backgroundImage = `url("${S.media.thumb}")`; else a.innerHTML = ICON.music; }
     }
@@ -1276,7 +1280,7 @@
     if (ev.button !== 0) return;
     const t = ev.target;
     let el;
-    if ((el = t.closest('#mBar'))) { if (hasMusic() && S.media.dur > 0) beginDrag({ k: 'seek', el, sec: null }, ev); return; }
+    if ((el = t.closest('#mBar'))) { if (hasMusic() && S.media.dur > 0 && !S.media.override) beginDrag({ k: 'seek', el, sec: null }, ev); return; }
     if ((el = t.closest('.sl'))) { beginDrag({ k: 'sl', el }, ev); return; }
     if ((el = t.closest('.bar[data-vol]'))) { beginDrag({ k: 'vol2', el }, ev); return; }
     if ((el = t.closest('#ruler'))) { beginDrag({ k: 'ruler', el, x0: ev.clientX, min0: S.timer.total / 60 }, ev); return; }
@@ -1289,13 +1293,13 @@
     const T = S.timer, m = S.media;
     switch (a) {
       // Nhạc
-      case 'm-play': if (m.status === 'Playing') lastPlayingAt = Date.now(); m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
+      case 'm-play': if (m.override) break; if (m.status === 'Playing') lastPlayingAt = Date.now(); m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
       case 'm-focus': api.media('focus'); break;
       case 'st-range': st.range = +el.dataset.r; store.set('strange', st.range); markRange(); drawStats(); break;
       case 'c-open': if (S.hover) { S.open = true; applyLayout(); requestSys(); } break;
-      case 'm-next': api.media('next'); break;
-      case 'm-prev': api.media('prev'); break;
-      case 'm-shuffle': m.shuffle = !m.shuffle; api.media('shuffle'); musicSig = ''; renderMusic(); break;
+      case 'm-next': if (!m.override) api.media('next'); break;
+      case 'm-prev': if (!m.override) api.media('prev'); break;
+      case 'm-shuffle': if (m.override) break; m.shuffle = !m.shuffle; api.media('shuffle'); musicSig = ''; renderMusic(); break;
       case 'm-out':
         S.outOpen = !S.outOpen; musicSig = ''; renderMusic(); applyLayout(); requestSys(true);
         // Mở ra thì cuộn để thấy thiết bị đang dùng

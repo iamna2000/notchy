@@ -195,19 +195,22 @@ unsafe extern "system" fn focus_cb(h: HWND, l: LPARAM) -> BOOL {
 // tìm tab có tên chứa tên bài, không có thì tab mang nhãn "đang phát âm thanh", rồi chọn tab đó.
 // Chỉ duyệt khung giao diện (bỏ qua nội dung trang web - Document) để nhanh và không bật chế độ trợ năng của trang.
 const AUDIO_TAB_MARKS: [&str; 3] = ["audio playing", "đang phát âm thanh", "playing audio"];
-fn select_media_tab(wins: &[HWND], title: &str) -> Option<HWND> {
+use windows::Win32::UI::Accessibility::IUIAutomationElement;
+struct Tab {
+    win: HWND,
+    el: IUIAutomationElement,
+    name: String,  // tên gốc của tab
+    lower: String, // tên viết thường để so khớp
+    audible: bool, // có nhãn "đang phát âm thanh"
+}
+// Đọc mọi tab trên thanh tab của các cửa sổ trình duyệt
+fn scan_tabs(wins: &[HWND]) -> Vec<Tab> {
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
-    use windows::Win32::UI::Accessibility::{
-        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationSelectionItemPattern,
-        UIA_DocumentControlTypeId, UIA_SelectionItemPatternId, UIA_TabItemControlTypeId,
-    };
+    use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, UIA_DocumentControlTypeId, UIA_TabItemControlTypeId};
+    let mut out = Vec::new();
     unsafe {
-        let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
-        let walker = uia.ControlViewWalker().ok()?;
-        let title = title.trim().to_lowercase();
-        // (cửa sổ, tab, khớp tên bài?)
-        let mut by_title: Option<(HWND, IUIAutomationElement)> = None;
-        let mut by_audio: Option<(HWND, IUIAutomationElement)> = None;
+        let Ok(uia) = CoCreateInstance::<_, IUIAutomation>(&CUIAutomation, None, CLSCTX_INPROC_SERVER) else { return out };
+        let Ok(walker) = uia.ControlViewWalker() else { return out };
         for &w in wins {
             let Ok(root) = uia.ElementFromHandle(w) else { continue };
             let mut queue = std::collections::VecDeque::from([(root, 0u32)]);
@@ -217,12 +220,10 @@ fn select_media_tab(wins: &[HWND], title: &str) -> Option<HWND> {
                 if seen > 600 { break; }
                 let ct = el.CurrentControlType().unwrap_or_default();
                 if ct == UIA_TabItemControlTypeId {
-                    let name = el.CurrentName().map(|b| b.to_string().to_lowercase()).unwrap_or_default();
-                    if by_title.is_none() && !title.is_empty() && name.contains(&title) {
-                        by_title = Some((w, el.clone()));
-                    } else if by_audio.is_none() && AUDIO_TAB_MARKS.iter().any(|m| name.contains(m)) {
-                        by_audio = Some((w, el.clone()));
-                    }
+                    let name = el.CurrentName().map(|b| b.to_string()).unwrap_or_default();
+                    let lower = name.to_lowercase();
+                    let audible = AUDIO_TAB_MARKS.iter().any(|m| lower.contains(m));
+                    out.push(Tab { win: w, el: el.clone(), name, lower, audible });
                     continue;
                 }
                 if ct == UIA_DocumentControlTypeId || depth >= 14 { continue; }
@@ -232,13 +233,38 @@ fn select_media_tab(wins: &[HWND], title: &str) -> Option<HWND> {
                     queue.push_back((c, depth + 1));
                 }
             }
-            if by_title.is_some() { break; }
         }
-        let (w, tab) = by_title.or(by_audio)?;
-        let pat: IUIAutomationSelectionItemPattern = tab.GetCurrentPatternAs(UIA_SelectionItemPatternId).ok()?;
-        pat.Select().ok()?;
-        Some(w)
     }
+    out
+}
+// Tên tab -> tên hiển thị: bỏ "(41) " ở đầu và phần trình duyệt thêm vào sau (" - YouTube", " - Audio playing", " - Memory usage"...)
+fn clean_tab_name(name: &str) -> String {
+    let mut s = name.trim();
+    if s.starts_with('(') {
+        if let Some(i) = s.find(") ") { if s[1..i].chars().all(|c| c.is_ascii_digit() || c == '+') { s = &s[i + 2..]; } }
+    }
+    let lower = s.to_lowercase();
+    let cut = [" - audio playing", " - đang phát âm thanh", " - playing audio", " - high memory usage", " - memory usage", " - youtube"]
+        .iter().filter_map(|m| lower.find(m)).min();
+    match cut { Some(i) => s[..i].trim().to_string(), None => s.to_string() }
+}
+// Chọn tab có tên chứa tên bài; không có thì tab đang phát âm thanh. Trả về cửa sổ chứa tab.
+fn select_media_tab(wins: &[HWND], title: &str) -> Option<HWND> {
+    use windows::Win32::UI::Accessibility::{IUIAutomationSelectionItemPattern, UIA_SelectionItemPatternId};
+    let title = title.trim().to_lowercase();
+    let tabs = scan_tabs(wins);
+    let t = tabs.iter().find(|t| !title.is_empty() && t.lower.contains(&title)).or_else(|| tabs.iter().find(|t| t.audible))?;
+    unsafe {
+        let pat: IUIAutomationSelectionItemPattern = t.el.GetCurrentPatternAs(UIA_SelectionItemPatternId).ok()?;
+        pat.Select().ok()?;
+    }
+    Some(t.win)
+}
+// Mọi cửa sổ của các tiến trình có tên trong names
+fn app_windows(names: Vec<String>) -> Vec<HWND> {
+    let mut q = FocusQ { names, title: String::new(), best: HWND::default(), first: HWND::default(), all: Vec::new() };
+    unsafe { let _ = EnumWindows(Some(focus_cb), LPARAM(&mut q as *mut FocusQ as isize)); }
+    q.all
 }
 
 fn focus_app(names: Vec<String>, title: &str, browser: bool) -> bool {
@@ -348,8 +374,17 @@ struct MediaState {
     last_key: String,
     thumb_ok: bool,
     thumb_tries: u32,
-    cur_thumb: u64,  // băm ảnh bìa đã nhận cho bài hiện tại
-    prev_thumb: u64, // băm ảnh bìa của bài trước (để nhận ra ảnh cũ chưa kịp đổi)
+    cur_thumb: u64,    // băm ảnh bìa đã nhận cho bài hiện tại
+    prev_thumb: u64,   // băm ảnh bìa của bài trước (để nhận ra ảnh cũ chưa kịp đổi)
+    thumb_str: String, // ảnh bìa (data URL) của phiên hiện tại, để gửi lại khi cần
+    emitted_key: String, // key đã gửi cho giao diện lần cuối (đổi thì gửi kèm ảnh bìa)
+    // Trình duyệt chỉ báo cho Windows MỘT nguồn: tab vừa phát gần nhất, kể cả video tắt tiếng (vd. reel Instagram
+    // tự chạy). Đọc thanh tab để biết tab nào thật sự có tiếng; nhớ nguồn có tiếng gần nhất để hiện tiếp.
+    tabs: Vec<(String, String, bool)>, // (tên gốc, tên thường, có tiếng)
+    tabs_at: Option<Instant>,
+    tabs_key: String,
+    good: Option<(Value, String, String, Instant)>, // (tin nhắn, ảnh bìa, tên thường, lúc ghi) của nguồn có tiếng gần nhất
+    override_title: Option<String>, // đang hiện nguồn có tiếng thay cho nguồn Windows báo: tên tab cần mở khi bấm ảnh bìa
 }
 fn hash_str(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -397,12 +432,14 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
         // Livestream (YouTube live trên trình duyệt...): Chromium báo thời lượng vô hạn -> EndTime âm
         "live": end - start < 0,
     });
-    if key != ms.last_key {
-        ms.last_key = key;
+    let key_changed = key != ms.last_key;
+    if key_changed {
+        ms.last_key = key.clone();
         ms.thumb_ok = false;
         ms.thumb_tries = 0;
         ms.prev_thumb = ms.cur_thumb;
         ms.cur_thumb = 0;
+        ms.thumb_str.clear();
         msg["thumb"] = json!("");
     }
     // Ảnh bìa thường đến trễ hơn tên bài (Spotify, YouTube): thử lại mỗi lần hỏi, tối đa 40 lần
@@ -415,6 +452,7 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
                 if !(h == ms.prev_thumb && ms.thumb_tries < STALE_TRIES) {
                     ms.thumb_ok = true;
                     ms.cur_thumb = h;
+                    ms.thumb_str = t.clone();
                     msg["thumb"] = json!(t);
                 }
             }
@@ -426,7 +464,97 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
             }
         }
     }
-    emit(msg);
+
+    // --- Trình duyệt: phiên Windows báo có phải tab đang có tiếng không? ---
+    let (names, browser) = player_names(&app);
+    let mut sess_audible: Option<bool> = None; // None: không tìm thấy tab của phiên
+    let mut audible_tab: Option<(String, String)> = None; // (tên gốc, tên thường) của một tab đang có tiếng
+    if browser {
+        let stale = ms.tabs_at.map_or(true, |t| t.elapsed() > Duration::from_secs(2));
+        if key_changed || stale || ms.tabs_key != key {
+            ms.tabs = scan_tabs(&app_windows(names)).into_iter().map(|t| (t.name, t.lower, t.audible)).collect();
+            ms.tabs_at = Some(Instant::now());
+            ms.tabs_key = key.clone();
+        }
+        let tl = title.trim().to_lowercase();
+        if !tl.is_empty() {
+            sess_audible = ms.tabs.iter().find(|t| t.1.contains(&tl)).map(|t| t.2);
+        }
+        audible_tab = ms.tabs.iter().find(|t| t.2).map(|t| (t.0.clone(), t.1.clone()));
+    }
+    // Phiên Windows báo là tab tắt tiếng: hiện nguồn có tiếng thay thế. Không còn tab nào có tiếng (vd. vừa tạm dừng
+    // YouTube) mà vẫn nhớ nguồn có tiếng cùng ứng dụng thì hiện nguồn đó ở trạng thái tạm dừng.
+    let same_app_good = ms.good.as_ref().map_or(false, |g| g.0["app"].as_str() == Some(app.as_str()));
+    let overriding = browser && sess_audible == Some(false) && (audible_tab.is_some() || same_app_good);
+
+    if !overriding {
+        ms.override_title = None;
+        // Nhớ nguồn có tiếng gần nhất (đang phát, không phải tab tắt tiếng) để dùng khi bị tab khác giành chỗ
+        if status == "Playing" && sess_audible != Some(false) {
+            ms.good = Some((msg.clone(), ms.thumb_str.clone(), title.trim().to_lowercase(), Instant::now()));
+        }
+        if ms.emitted_key != key {
+            if msg.get("thumb").is_none() { msg["thumb"] = json!(ms.thumb_str); }
+            ms.emitted_key = key;
+        }
+        emit(msg);
+        return Ok(());
+    }
+
+    // --- Tab tắt tiếng đang giành chỗ: hiện tiếp nguồn đang có tiếng ---
+    if audible_tab.is_none() {
+        let (g, gthumb, _, _) = ms.good.clone().unwrap();
+        let mut o = g;
+        o["status"] = json!("Paused");
+        o["upd"] = json!(0);
+        if ms.emitted_key != o["key"].as_str().unwrap_or("") { o["thumb"] = json!(gthumb); }
+        ms.override_title = Some(o["title"].as_str().unwrap_or("").to_string());
+        o["override"] = json!(true);
+        o["ctl"] = json!(title);
+        ms.emitted_key = o["key"].as_str().unwrap_or("").to_string();
+        emit(o);
+        return Ok(());
+    }
+    let (aname, alower) = audible_tab.unwrap();
+    let ctl = title.clone(); // tên nguồn mà Windows đang gán nút điều khiển
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let good = ms.good.clone();
+    let mut out = match &good {
+        // Nguồn có tiếng là bài đã biết đầy đủ (vd. YouTube trước khi Instagram giành chỗ): giữ tên, ảnh bìa, chạy tiếp thời gian
+        Some((g, gthumb, gtitle, at)) if !gtitle.is_empty() && alower.contains(gtitle.as_str()) => {
+            let mut o = g.clone();
+            let dur = o["dur"].as_f64().unwrap_or(0.0);
+            // Vị trí Windows báo là vị trí TẠI lúc cập nhật cuối (upd), có thể đã cũ vài phút: tính tiếp từ upd
+            let upd0 = o["upd"].as_i64().unwrap_or(0);
+            let since = if upd0 > 0 { (now_ms - upd0).max(0) as f64 / 1000.0 } else { at.elapsed().as_secs_f64() };
+            let mut p = o["pos"].as_f64().unwrap_or(0.0) + since;
+            if dur > 0.0 { p = p.min(dur); }
+            o["pos"] = json!(round2(p));
+            o["upd"] = json!(now_ms);
+            o["status"] = json!("Playing");
+            if ms.emitted_key != o["key"].as_str().unwrap_or("") { o["thumb"] = json!(gthumb); }
+            ms.override_title = Some(g["title"].as_str().unwrap_or("").to_string());
+            // Cập nhật vị trí đã nhớ: nếu sau đó tab có tiếng dừng thì hiện dừng đúng chỗ
+            let mut g2 = g.clone(); g2["pos"] = json!(round2(p)); g2["upd"] = json!(now_ms);
+            let keep = (g2, gthumb.clone(), gtitle.clone(), Instant::now());
+            ms.good = Some(keep);
+            o
+        }
+        // Chưa biết gì về nguồn có tiếng: lấy tên từ tab
+        _ => {
+            let t = clean_tab_name(&aname);
+            let k = format!("tab|{}", alower);
+            let mut o = json!({ "type": "media", "active": true, "key": k, "title": t, "artist": "", "album": "", "app": app,
+                "status": "Playing", "pos": 0.0, "dur": 0.0, "upd": 0, "rate": 1.0, "shuffle": false, "live": false });
+            if ms.emitted_key != k { o["thumb"] = json!(""); }
+            ms.override_title = Some(t);
+            o
+        }
+    };
+    out["override"] = json!(true);
+    out["ctl"] = json!(ctl);
+    ms.emitted_key = out["key"].as_str().unwrap_or("").to_string();
+    emit(out);
     Ok(())
 }
 
@@ -443,7 +571,8 @@ fn parse_probe(s: &str) -> Vec<(i32, i32)> {
         .collect()
 }
 
-fn run_command(mgr: Option<&Manager>, cmd: &str) {
+// ov: đang hiện nguồn có tiếng thay cho nguồn Windows báo (tab tắt tiếng giành chỗ): tên bài của nguồn có tiếng
+fn run_command(mgr: Option<&Manager>, cmd: &str, ov: Option<&str>) {
     if cmd == "paste" {
         std::thread::sleep(Duration::from_millis(80));
         send_paste();
@@ -459,6 +588,7 @@ fn run_command(mgr: Option<&Manager>, cmd: &str) {
                 .and_then(|p| p.Title())
                 .map(|h| h.to_string())
                 .unwrap_or_default();
+            let title = ov.map(|t| t.to_string()).unwrap_or(title);
             let (names, browser) = player_names(&aumid);
             let ok = focus_app(names, &title, browser);
             // Không có cửa sổ hiện (vd. Spotify đang ẩn dưới khay): kích hoạt lại ứng dụng đóng gói qua shell
@@ -466,6 +596,11 @@ fn run_command(mgr: Option<&Manager>, cmd: &str) {
                 let _ = std::process::Command::new("explorer.exe").arg(format!("shell:AppsFolder\\{}", aumid)).spawn();
             }
         }
+        return;
+    }
+    // Nút điều khiển lúc này chỉ tác động lên tab tắt tiếng mà trình duyệt đang gán (không phải nguồn có tiếng): bỏ qua
+    if ov.is_some() && cmd != "focus" {
+        log_err(&format!("cmd {}: bo qua, trinh duyet dang gan dieu khien cho tab tat tieng", cmd));
         return;
     }
     if let Some(s) = &s {
@@ -537,7 +672,10 @@ fn main() {
         }
     };
 
-    let mut ms = MediaState { last_key: String::new(), thumb_ok: false, thumb_tries: 0, cur_thumb: 0, prev_thumb: 0 };
+    let mut ms = MediaState {
+        last_key: String::new(), thumb_ok: false, thumb_tries: 0, cur_thumb: 0, prev_thumb: 0, thumb_str: String::new(),
+        emitted_key: String::new(), tabs: Vec::new(), tabs_at: None, tabs_key: String::new(), good: None, override_title: None,
+    };
     let mut probe: Vec<(i32, i32)> = Vec::new();
     let mut last_cover: Option<bool> = None;
     let mut last_fs: Option<bool> = None;
@@ -555,7 +693,7 @@ fn main() {
                     probe = parse_probe(rest);
                     last_cover = None;
                 } else if !cmd.is_empty() {
-                    run_command(mgr.as_ref(), &cmd);
+                    run_command(mgr.as_ref(), &cmd, ms.override_title.as_deref());
                     burst = 4; // phát lại trạng thái vài lần liên tiếp sau lệnh
                     next_media = Instant::now();
                 }
@@ -566,7 +704,7 @@ fn main() {
                         probe = parse_probe(rest);
                         last_cover = None;
                     } else if !c.is_empty() {
-                        run_command(mgr.as_ref(), &c);
+                        run_command(mgr.as_ref(), &c, ms.override_title.as_deref());
                         burst = 4;
                     }
                 }
