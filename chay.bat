@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-title Dynamic Island
+title Notchy
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -71,7 +71,7 @@ del electron.zip
 exit /b 0
 
 :run
-echo Dang mo Dynamic Island...
+echo Dang mo Notchy...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\stop-old.ps1" >nul 2>nul
 wscript.exe //nologo "%~dp0launch.vbs"
 exit 0

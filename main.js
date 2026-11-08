@@ -1,14 +1,13 @@
-const { app, BrowserWindow, screen, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, powerSaveBlocker, shell, desktopCapturer } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, shell, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
-const { spawn, execFile, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const os = require('os');
 const net = require('net');
 
 const WIN_W = 640;
 const WIN_H = 470;
-const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications';
 
 let win = null;
 let tray = null;
@@ -21,17 +20,20 @@ let hoverNow = false;
 let hiddenNow = false;   // viên thuốc đang tự ẩn (trượt lên khỏi màn hình)
 let userHidden = false;  // người dùng chọn ẩn từ khay hệ thống
 let fsHidden = false;    // đang ẩn hẳn vì game / ứng dụng Direct3D toàn màn hình
-let alerting = false;    // đang đổ chuông báo thức/hẹn giờ
+let alerting = false;    // đang đổ chuông hẹn giờ / nhắc ghi chú
 let covered = false;     // có cửa sổ khác (trình duyệt phóng to...) nằm dưới viên thuốc
+let fullUnder = false;  // cửa sổ dưới viên thuốc đang toàn màn hình (video, trình chiếu, game không viền): luôn thu thành vạch
+let tabUnder = false;    // có tab (thanh tab trình duyệt, Explorer) nằm ngay dưới viên thuốc (di-media dò bằng UI Automation)
 let revealed = false;    // người dùng đã đưa chuột lên mép trên để gọi viên thuốc ra
 let edgeSince = 0;
 let leaveSince = 0;
 let peekUntil = 0;
 let holding = false;     // đang kéo thanh trượt
 let typing = false;      // đang gõ chữ vào ô nhập
-let awakeId = null;
-let dndOn = false;
-let dndByUs = false;
+
+// Tên hiển thị (productName) là "Notchy", nhưng giữ thư mục dữ liệu cũ %APPDATA%/dynamic-island-windows
+// (cài đặt, ghi chú, lịch sử bảng tạm) cho cả bản chạy bằng chay.bat lẫn bản cài đặt
+app.setName('dynamic-island-windows');
 
 // ---------- Ghi log + cài đặt ----------
 const userDir = () => app.getPath('userData');
@@ -55,9 +57,10 @@ function saveSettings(s) {
 //   'smart'   có cửa sổ nằm dưới viên thuốc (trình duyệt, ứng dụng...) và không dùng 5 giây thì ẩn;
 //             bên dưới là màn hình nền thì hiện liên tục (mặc định)
 //   'covered' có cửa sổ nằm dưới thì ẩn ngay
+//   'tabs'    chỉ ẩn khi viên thuốc đang che tab (Chrome/Edge/Brave/Cốc Cốc/Firefox/Explorer); còn lại hiện liên tục
 //   'idle'    không dùng idleSec giây thì ẩn, kể cả không có cửa sổ nào
 //   'off'     không tự ẩn
-const HIDE_MODES = ['smart', 'covered', 'idle', 'off'];
+const HIDE_MODES = ['smart', 'covered', 'tabs', 'idle', 'off'];
 const SMART_DELAY = 5000;
 const IDLE_CHOICES = [5, 10, 30];
 let hideMode = 'smart';
@@ -88,7 +91,6 @@ if (!gotLock) {
   app.on('before-quit', () => { quitting = true; });
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
-    if (dndByUs) setToasts(true, true);
     stopProc(mediaProc); stopProc(sysProc); stopStats();
     flushClip();
   });
@@ -146,9 +148,10 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => updateVisibility());
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone:', JSON.stringify(d)));
-  win.webContents.on('did-finish-load', () => resendMedia()); // giao diện (tải lại) sẵn sàng: gửi lại nhạc + ảnh bìa
+  // giao diện (tải lại) sẵn sàng: gửi lại nhạc + ảnh bìa, và trạng thái tự ẩn (gửi trước khi trang tải xong thì bị mất)
+  win.webContents.on('did-finish-load', () => { resendMedia(); if (hiddenNow) send('hidden', true); });
   win.on('closed', () => { win = null; });
-  // backgroundThrottling tắt (để báo thức chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
+  // backgroundThrottling tắt (để hẹn giờ, nhắc ghi chú chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
   // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
   win.on('show', () => send('winvis', true));
   win.on('hide', () => send('winvis', false));
@@ -178,10 +181,11 @@ function pollCursor() {
   if (hoverNow || holding || typing || alerting || now <= peekUntil) lastUse = now;
   if (!covered) coveredSince = 0; else if (!coveredSince) coveredSince = now;
   // 'smart': đếm 5 giây từ lúc dùng gần nhất hoặc từ lúc cửa sổ vừa xuất hiện bên dưới (lấy mốc muộn hơn)
-  const due = hideMode === 'smart' ? covered && now - Math.max(lastUse, coveredSince) > SMART_DELAY
+  const due = fullUnder || (hideMode === 'smart' ? covered && now - Math.max(lastUse, coveredSince) > SMART_DELAY
     : hideMode === 'covered' ? covered
+    : hideMode === 'tabs' ? covered && tabUnder
     : hideMode === 'idle' ? now - lastUse > idleSec * 1000
-    : false;
+    : false);
   const wantAuto = due && !alerting && now > peekUntil;
   if (wantAuto) {
     if (!revealed) {
@@ -236,7 +240,7 @@ function spawnPS(file, args, onLine, onExit) {
 }
 // Cầu nối Rust (native/): bản đóng gói đặt ở bin/, bản đang phát triển ở native/target/release/
 function nativeExe(name) {
-  for (const p of [path.join(__dirname, 'bin', name + '.exe'), path.join(__dirname, 'native', 'target', 'release', name + '.exe')]) {
+  for (const p of [path.join(__dirname, 'native', 'target', 'release', name + '.exe'), path.join(__dirname, 'bin', name + '.exe')]) {
     if (fs.existsSync(p)) return p;
   }
   return null;
@@ -321,7 +325,9 @@ function startMedia() {
     let m;
     try { m = JSON.parse(line); } catch (_) { return; }
     if (m.type === 'fs') { fsHidden = !!m.value; updateVisibility(); }
-    else if (m.type === 'cover') { covered = !!m.value; }
+    else if (m.type === 'cover') { covered = !!m.value; if (!covered) { tabUnder = false; fullUnder = false; } }
+    else if (m.type === 'full') { fullUnder = !!m.value; }
+    else if (m.type === 'tabs') { tabUnder = !!m.value; }
     else { if (m.type === 'media') { processThumb(m); rememberMedia(m); } send('media', m); }
   };
   const exe = mediaNativeFails < 3 ? nativeExe('di-media') : null;
@@ -447,9 +453,9 @@ function stopStats() {
   clearTimeout(stats.timer); stats.timer = null;
   stopProc(stats.gpuProc); stats.gpuProc = null;
 }
-// ---------- Thời tiết (viên thuốc thu gọn khi không phát gì) ----------
-// Vị trí đoán theo IP (ipwho.is), lưu lại 1 ngày; thời tiết từ Open-Meteo, cập nhật mỗi 15 phút.
-// Cả hai miễn phí, không cần khóa. Tắt được trong menu ("Hiện thời tiết").
+// ---------- Thời tiết (viên thuốc thu gọn khi không phát gì + tab Thời tiết) ----------
+// Vị trí đoán theo IP (ipwho.is), lưu lại 1 ngày; thời tiết hiện tại + dự báo 7 ngày từ Open-Meteo,
+// cập nhật mỗi 15 phút. Cả hai miễn phí, không cần khóa. Tắt được trong menu ("Hiện thời tiết").
 const weather = { data: null, timer: null, failLogged: false };
 const weatherOn = () => loadSettings().weather !== false;
 async function weatherLocation() {
@@ -461,6 +467,8 @@ async function weatherLocation() {
   const s2 = loadSettings(); s2.weatherLoc = loc; saveSettings(s2);
   return loc;
 }
+const DAILY_VARS = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'apparent_temperature_max', 'apparent_temperature_min',
+  'precipitation_sum', 'precipitation_probability_max', 'wind_speed_10m_max', 'wind_gusts_10m_max', 'uv_index_max'];
 async function refreshWeather() {
   clearTimeout(weather.timer); weather.timer = null;
   if (!weatherOn()) { weather.data = null; send('weather', null); return; }
@@ -468,15 +476,25 @@ async function refreshWeather() {
   try {
     const loc = await weatherLocation();
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}`
-      + '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1';
+      + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m'
+      + `&daily=${DAILY_VARS.join(',')}&timezone=auto&forecast_days=7`;
     const j = await (await fetch(url, { signal: AbortSignal.timeout(10000) })).json();
-    const c = j.current;
+    const c = j.current, d = j.daily || {};
     if (!c || !Number.isFinite(c.temperature_2m)) throw new Error('dữ liệu thời tiết không hợp lệ');
+    const num = (a, i) => (Array.isArray(a) && Number.isFinite(a[i]) ? a[i] : null);
+    const daily = (d.time || []).map((date, i) => ({
+      date, code: num(d.weather_code, i), hi: num(d.temperature_2m_max, i), lo: num(d.temperature_2m_min, i),
+      fhi: num(d.apparent_temperature_max, i), flo: num(d.apparent_temperature_min, i),
+      rain: num(d.precipitation_sum, i), pop: num(d.precipitation_probability_max, i),
+      wind: num(d.wind_speed_10m_max, i), gust: num(d.wind_gusts_10m_max, i), uv: num(d.uv_index_max, i),
+    }));
     weather.data = {
       temp: c.temperature_2m, code: c.weather_code, day: !!c.is_day, city: loc.city,
-      hi: j.daily && j.daily.temperature_2m_max ? j.daily.temperature_2m_max[0] : null,
-      lo: j.daily && j.daily.temperature_2m_min ? j.daily.temperature_2m_min[0] : null,
-      at: Date.now(),
+      feels: Number.isFinite(c.apparent_temperature) ? c.apparent_temperature : null,
+      hum: Number.isFinite(c.relative_humidity_2m) ? c.relative_humidity_2m : null,
+      wind: Number.isFinite(c.wind_speed_10m) ? c.wind_speed_10m : null,
+      hi: daily.length ? daily[0].hi : null, lo: daily.length ? daily[0].lo : null,
+      daily, at: Date.now(),
     };
     weather.failLogged = false;
     send('weather', weather.data);
@@ -549,9 +567,29 @@ async function shelfPayload() {
       try { icon = (await app.getFileIcon(it.path, { size: 'normal' })).toDataURL(); } catch (_) { icon = ''; }
       if (icon) { if (iconCache.size > 200) iconCache.clear(); iconCache.set(it.path, icon); }
     }
-    out.push({ id: it.id, name: path.basename(it.path) || it.path, dir: path.dirname(it.path), icon });
+    let size = 0;
+    try { const st = fs.statSync(it.path); if (st.isFile()) size = st.size; } catch (_) {}
+    out.push({ id: it.id, name: path.basename(it.path) || it.path, dir: path.dirname(it.path), icon, size, thumb: await shelfThumb(it.path) });
   }
   return out;
+}
+// Ảnh / video: lấy ảnh xem trước của Windows (như Explorer). Lưu theo đường dẫn + thời điểm sửa tệp,
+// tệp bị sửa thì tự lấy lại. Không lấy được (định dạng lạ, thiếu codec) thì dùng icon như cũ.
+const THUMB_EXT = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|heif|avif|ico|jfif|mp4|mov|mkv|avi|webm|wmv|m4v)$/i;
+const shelfThumbs = new Map();
+async function shelfThumb(p) {
+  if (!THUMB_EXT.test(p) || process.platform !== 'win32') return '';
+  let key;
+  try { key = p + '|' + fs.statSync(p).mtimeMs; } catch (_) { return ''; }
+  if (shelfThumbs.has(key)) return shelfThumbs.get(key);
+  let url = '';
+  try {
+    const img = await nativeImage.createThumbnailFromPath(p, { width: 192, height: 192 });
+    if (!img.isEmpty()) url = img.toDataURL();
+  } catch (e) { log('shelf thumb:', path.basename(p), e.message); }
+  if (shelfThumbs.size > 100) shelfThumbs.clear();
+  shelfThumbs.set(key, url);
+  return url;
 }
 async function sendShelf() { try { send('shelf', await shelfPayload()); } catch (e) { log('shelf:', e.message); } }
 
@@ -589,30 +627,54 @@ function watchDownloads() {
   } catch (e) { log('watch downloads:', e.message); }
 }
 
-// ---------- Không làm phiền / giữ máy thức ----------
-function setToasts(enabled, sync) {
-  const args = ['add', REG_KEY, '/v', 'ToastEnabled', '/t', 'REG_DWORD', '/d', enabled ? '1' : '0', '/f'];
-  try {
-    if (sync) execFileSync('reg', args, { windowsHide: true });
-    else execFile('reg', args, { windowsHide: true }, (e) => { if (e) log('reg:', e.message); });
-  } catch (e) { log('reg:', e.message); }
+// ---------- Ảnh chụp màn hình -> Kệ tạm ----------
+// Win+Shift+S / PrtScn: Snipping Tool tự lưu ảnh vào Pictures/Screenshots (mặc định trên Windows 11).
+// Theo dõi thư mục đó (cả bản OneDrive nếu có): ảnh mới được đưa lên đầu kệ để kéo thả ngay.
+// Kệ chỉ giữ 10 ảnh chụp tự thêm gần nhất (tệp thật không bị xóa). Tắt được trong menu.
+const SHOT_KEEP = 10;
+const shotsOn = () => loadSettings().shelfShots !== false;
+function addShot(f) {
+  if (!shotsOn() || shelf.some((x) => x.path === f)) return;
+  shelf.unshift({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), path: f, shot: true });
+  let n = 0;
+  shelf = shelf.filter((x) => !x.shot || ++n <= SHOT_KEEP).slice(0, 40);
+  saveShelf(); sendShelf();
+  peekUntil = Date.now() + 4200;
+  shelfThumb(f).then((thumb) => send('toast', { kind: 'shot', title: 'Đã thêm vào Kệ tạm', sub: path.basename(f), thumb }));
 }
-function readDnd() {
-  if (process.platform !== 'win32') return;
-  execFile('reg', ['query', REG_KEY, '/v', 'ToastEnabled'], { windowsHide: true }, (e, out) => {
-    dndOn = !e && /ToastEnabled\s+REG_DWORD\s+0x0\b/i.test(String(out));
-    sendFlags();
-  });
+function watchScreenshots() {
+  const dirs = new Set();
+  try { dirs.add(path.join(app.getPath('pictures'), 'Screenshots')); } catch (_) {}
+  if (process.env.OneDrive) dirs.add(path.join(process.env.OneDrive, 'Pictures', 'Screenshots'));
+  const IMG = /\.(png|jpe?g|gif|webp|bmp)$/i;
+  const timers = new Map();
+  for (const dir of dirs) {
+    if (!exists(dir)) continue;
+    const check = (f, size0) => {
+      let st;
+      try { st = fs.statSync(f); } catch (_) { return; }
+      if (!st.isFile() || st.size === 0 || Date.now() - st.birthtimeMs > 30000) return; // chỉ ảnh vừa tạo
+      if (st.size !== size0) { timers.set(f, setTimeout(() => check(f, st.size), 600)); return; } // đợi ghi xong
+      addShot(f);
+    };
+    try {
+      fs.watch(dir, { persistent: false }, (_evt, name) => {
+        if (!name || !IMG.test(name)) return;
+        const f = path.join(dir, name);
+        clearTimeout(timers.get(f));
+        timers.set(f, setTimeout(() => check(f, -1), 500));
+      });
+      log('watching screenshots:', dir);
+    } catch (e) { log('watch screenshots:', e.message); }
+  }
 }
-const flags = () => ({ dnd: dndOn, awake: awakeId !== null });
-const sendFlags = () => send('flags', flags());
 
 // ---------- Khay hệ thống ----------
 function autostartEnabled() {
-  try { return app.getLoginItemSettings({ path: process.execPath, args: [app.getAppPath()] }).openAtLogin; } catch (_) { return false; }
+  try { return app.getLoginItemSettings({ path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] }).openAtLogin; } catch (_) { return false; }
 }
 function setAutostart(on) {
-  try { app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: [app.getAppPath()] }); } catch (e) { log('autostart:', e.message); }
+  try { app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] }); } catch (e) { log('autostart:', e.message); }
   const s = loadSettings(); s.autostart = on; saveSettings(s);
 }
 // Icon khay đơn sắc như icon hệ thống: trắng trên taskbar tối, đen trên taskbar sáng (theo màu taskbar của Windows)
@@ -634,9 +696,46 @@ function trayImage() {
   // Dự phòng cuối: ô vuông trắng 16x16 (BGRA) để chắc chắn có icon
   return nativeImage.createFromBitmap(Buffer.alloc(16 * 16 * 4, 0xff), { width: 16, height: 16 });
 }
+// ---------- Tự cập nhật (chỉ bản cài đặt; bản mới đăng ở GitHub Releases) ----------
+// Mở app và mỗi 4 giờ: kiểm tra bản mới, tải ngầm, báo trên viên thuốc. Cài khi người dùng chọn trong menu
+// hoặc tự cài lúc thoát app / tắt máy.
+const upd = { state: 'idle', version: '', percent: 0, err: '' }; // idle | checking | downloading | ready | latest | error
+let updater = null;
+function setupUpdater() {
+  if (!app.isPackaged) return;
+  try { updater = require('electron-updater').autoUpdater; } catch (e) { log('updater:', e.message); return; }
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+  updater.logger = { info: (m) => log('update:', m), warn: (m) => log('update warn:', m), error: (m) => log('update error:', m), debug: () => {} };
+  updater.on('checking-for-update', () => { upd.state = 'checking'; refreshTrayMenu(); });
+  updater.on('update-not-available', () => { upd.state = 'latest'; refreshTrayMenu(); });
+  updater.on('update-available', (i) => { upd.state = 'downloading'; upd.version = i.version; upd.percent = 0; refreshTrayMenu(); });
+  updater.on('download-progress', (pr) => { const p = Math.floor(pr.percent || 0); if (p - upd.percent >= 10) { upd.percent = p; refreshTrayMenu(); } });
+  updater.on('update-downloaded', (i) => {
+    upd.state = 'ready'; upd.version = i.version; refreshTrayMenu();
+    send('toast', { kind: 'update', title: `Có bản mới ${i.version}`, sub: 'Chuột phải viên thuốc > Cập nhật, hoặc tự cài khi tắt máy' });
+    peek();
+  });
+  updater.on('error', (e) => { upd.state = 'error'; upd.err = String((e && e.message) || e).split(String.fromCharCode(10))[0].trim(); log('update error:', upd.err); refreshTrayMenu(); });
+  const check = () => { if (upd.state !== 'ready' && upd.state !== 'downloading') updater.checkForUpdates().catch(() => {}); };
+  setTimeout(check, 15000);
+  setInterval(check, 4 * 3600 * 1000);
+}
+function updateMenu() {
+  if (!app.isPackaged) return [];
+  const st = upd.state;
+  const item = st === 'ready' ? { label: `Cập nhật lên ${upd.version} (khởi động lại)`, click: () => { quitting = true; updater.quitAndInstall(true, true); } }
+    : st === 'downloading' ? { label: `Đang tải bản ${upd.version}… ${upd.percent}%`, enabled: false }
+    : st === 'checking' ? { label: 'Đang kiểm tra cập nhật…', enabled: false }
+    : { label: st === 'latest' ? 'Kiểm tra cập nhật (đang là bản mới nhất)' : st === 'error' ? 'Kiểm tra cập nhật (lần trước lỗi)' : 'Kiểm tra cập nhật',
+        click: () => updater && updater.checkForUpdates().catch(() => {}) };
+  return [item, { type: 'separator' }];
+}
+
 function buildMenu() {
   return Menu.buildFromTemplate([
-    { label: `Dynamic Island ${app.getVersion()}`, enabled: false },
+    { label: `Notchy ${app.getVersion()}`, enabled: false },
+    ...updateMenu(),
     { type: 'separator' },
     { label: userHidden ? 'Hiện viên thuốc' : 'Ẩn viên thuốc', click: () => { userHidden = !userHidden; updateVisibility(); refreshTrayMenu(); } },
     ...displayMenu(),
@@ -646,12 +745,14 @@ function buildMenu() {
       { label: 'Khi có cửa sổ bên dưới', enabled: false },
       { label: 'Sau 5 giây không dùng', type: 'radio', checked: hideMode === 'smart', click: () => setHide('smart') },
       { label: 'Ngay lập tức', type: 'radio', checked: hideMode === 'covered', click: () => setHide('covered') },
+      { label: 'Chỉ khi che tab trình duyệt', type: 'radio', checked: hideMode === 'tabs', click: () => setHide('tabs') },
       { type: 'separator' },
       { label: 'Luôn ẩn khi không dùng', enabled: false },
       ...IDLE_CHOICES.map((v) => ({
         label: `Sau ${v} giây`, type: 'radio', checked: hideMode === 'idle' && idleSec === v, click: () => setHide('idle', v),
       })),
     ] },
+    { label: 'Ảnh chụp màn hình vào Kệ tạm', type: 'checkbox', checked: shotsOn(), click: (i) => { const s = loadSettings(); s.shelfShots = i.checked; saveSettings(s); } },
     { label: 'Hiện thời tiết', type: 'checkbox', checked: weatherOn(), click: (i) => { const s = loadSettings(); s.weather = i.checked; saveSettings(s); refreshWeather(); } },
     { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
     { type: 'separator' },
@@ -690,7 +791,7 @@ function buildTray() {
     tray = new Tray(trayImage());
     // Đổi sáng/tối trong Windows: đổi icon theo
     try { require('electron').nativeTheme.on('updated', () => { try { if (tray && !tray.isDestroyed()) tray.setImage(trayImage()); } catch (e) { log('tray theme:', e.message); } }); } catch (_) {}
-    tray.setToolTip('Dynamic Island');
+    tray.setToolTip('Notchy');
     refreshTrayMenu();
     const show = () => { userHidden = false; updateVisibility(); peek(); refreshTrayMenu(); };
     tray.on('click', show);
@@ -710,19 +811,24 @@ function start() {
   createWindow();
   buildTray();
   startMedia();
+  setupUpdater();
   startStats(); // ghi nền lịch sử CPU/RAM/GPU/mạng cho tab Hệ thống
   refreshWeather();
   pruneThumbs(); setInterval(pruneThumbs, 3600 * 1000); // ảnh bìa đệm: xóa ảnh quá 1 ngày
   // Máy thức dậy sau khi ngủ: cập nhật thời tiết ngay (dữ liệu cũ có thể đã lâu)
   try { require('electron').powerMonitor.on('resume', () => setTimeout(refreshWeather, 5000)); } catch (_) {}
-  readDnd();
   watchDownloads();
+  watchScreenshots();
   setInterval(pollCursor, 50);
   setInterval(pollClipboard, 700);
   setInterval(flushClip, 2000);
   globalShortcut.register('Control+Alt+Q', () => app.quit());
   const s = loadSettings();
   if (s.autostart === undefined) setAutostart(true);
+  // Tính năng AI thời tiết đã bỏ: xóa khóa API và tin đã lưu (nếu có) khỏi cài đặt
+  if ('aiKeyEnc' in s || 'aiKey' in s || 'aiNews' in s) {
+    const s2 = loadSettings(); delete s2.aiKeyEnc; delete s2.aiKey; delete s2.aiNews; saveSettings(s2);
+  }
 }
 
 // ---------- Giao tiếp với giao diện ----------
@@ -738,7 +844,7 @@ ipcMain.on('media-cmd', (_e, cmd) => {
   writeProc(mediaProc, cmd);
 });
 ipcMain.on('sys-cmd', (_e, cmd) => {
-  if (typeof cmd !== 'string' || !/^(get|devices|mute|vol:[01](\.\d+)?|bri:\d{1,3}|dev:[\w\-.{}]{1,200})$/.test(cmd)) return;
+  if (typeof cmd !== 'string' || !/^(get|devices|mute|vol:[01](\.\d+)?|dev:[\w\-.{}]{1,200})$/.test(cmd)) return;
   ensureSys();
   writeProc(sysProc, cmd);
 });
@@ -753,29 +859,17 @@ ipcMain.on('typing', (_e, on) => {
   } catch (_) {}
 });
 ipcMain.on('clip-get', () => send('clip', clipList));
-ipcMain.on('clip-paste', (_e, id) => {
+// Bấm một mục: chỉ chép vào clipboard (không tự dán). Giữ nguyên thứ tự danh sách (lastClipText để vòng
+// theo dõi clipboard không coi đây là nội dung mới).
+ipcMain.on('clip-copy', (_e, id) => {
   const it = clipList.find((x) => x.id === id);
   if (!it) return;
   lastClipText = it.text;
   clipboard.writeText(it.text);
-  typing = false;
-  try { win.blur(); win.setFocusable(false); } catch (_) {}
-  setTimeout(() => writeProc(mediaProc, 'paste'), 120);
 });
 ipcMain.on('clip-pin', (_e, id) => { const it = clipList.find((x) => x.id === id); if (it) { it.pin = !it.pin; clipChanged(); } });
 ipcMain.on('clip-del', (_e, id) => { clipList = clipList.filter((x) => x.id !== id); clipChanged(); });
 ipcMain.on('clip-clear', () => { clipList = clipList.filter((x) => x.pin); clipChanged(); });
-ipcMain.on('toggle', (_e, name, on) => {
-  if (name === 'awake') {
-    if (on && awakeId === null) awakeId = powerSaveBlocker.start('prevent-display-sleep');
-    if (!on && awakeId !== null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
-  } else if (name === 'dnd' && process.platform === 'win32') {
-    dndOn = !!on; if (on) dndByUs = true;
-    setToasts(!on, false);
-  }
-  sendFlags();
-});
-ipcMain.handle('flags', () => flags());
 ipcMain.on('menu', () => { try { buildMenu().popup({ window: win }); } catch (e) { log('menu:', e.message); } });
 ipcMain.on('open-sound', () => { shell.openExternal('ms-settings:sound').catch(() => {}); });
 ipcMain.on('shelf-get', () => sendShelf());

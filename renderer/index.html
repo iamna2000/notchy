@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'" />
-<title>Dynamic Island</title>
+<title>Notchy</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -25,14 +25,13 @@
         <nav class="topbar">
           <div class="tb-grp">
             <button class="tb" data-tab="music" title="Nhạc"></button>
-            <button class="tb" data-tab="sys" title="Hệ thống"></button>
+            <button class="tb" data-tab="weather" title="Thời tiết"></button>
             <button class="tb tb-date" data-tab="calendar" title="Lịch"><span id="tbDate">--</span></button>
           </div>
           <div class="tb-grp">
-            <button class="tb" data-tab="alarm" title="Báo thức"></button>
             <button class="tb" data-tab="clip" title="Bảng tạm"></button>
             <button class="tb" data-tab="shelf" title="Kệ tạm (kéo thả tệp)"></button>
-            <button class="tb" data-tab="ctrl" title="Điều khiển"></button>
+            <button class="tb" data-tab="sys" title="Hệ thống"></button>
           </div>
         </nav>
 
@@ -70,14 +69,9 @@
             </div>
           </section>
 
-          <!-- Báo thức -->
-          <section class="view" data-view="alarm">
-            <div class="alarm-head">
-              <div class="alarm-title">Báo thức</div>
-              <button class="ib-s orange" data-act="alarm-add" id="alarmAddBtn" aria-label="Thêm báo thức"></button>
-            </div>
-            <div class="alarm-list" id="alarmList"></div>
-            <div class="a-editor" id="alarmEditor"></div>
+          <!-- Thời tiết: hiện tại → lưu ý (tối đa 3 dòng) → dự báo 7 ngày -->
+          <section class="view" data-view="weather">
+            <div class="wx-wrap" id="wxWrap"></div>
           </section>
 
           <!-- Bảng tạm -->
@@ -96,38 +90,10 @@
           <!-- Kệ tạm -->
           <section class="view" data-view="shelf">
             <div class="clip-head">
-              <div class="clip-ttl">Kệ tạm</div>
-              <div class="clip-tools"><button class="ib-s" data-act="shelf-clear" id="shelfClearBtn" title="Xóa hết khỏi kệ (không xóa tệp thật)"></button></div>
+              <div class="clip-ttl">Kệ tạm <span class="sh-meta" id="shelfMeta"></span></div>
+              <div class="clip-tools"><button class="cal-exp" data-act="shelf-exp" id="shelfExp"></button><button class="ib-s" data-act="shelf-clear" id="shelfClearBtn" title="Xóa hết khỏi kệ (không xóa tệp thật)"></button></div>
             </div>
             <div class="shelf-list" id="shelfList"></div>
-          </section>
-
-          <!-- Điều khiển -->
-          <section class="view" data-view="ctrl">
-            <div class="sl" data-sl="vol" id="slVol"></div>
-            <div class="sl" data-sl="bri" id="slBri"></div>
-            <div class="ic-row" id="icRow"></div>
-
-            <div class="ct-panel ct-timer on">
-              <div class="ruler" id="ruler"><div class="ticks" id="ticks"></div><i class="mark"></i></div>
-              <div class="t-row">
-                <button class="pill orange" id="tToggle" data-act="t-toggle">Bắt đầu</button>
-                <button class="ib-s round" data-act="t-plus" title="Thêm 1 phút" id="tPlus"></button>
-                <button class="ib-s round" data-act="t-reset" title="Đặt lại" id="tReset"></button>
-                <div class="t-big" id="tTime">5:00</div>
-              </div>
-            </div>
-
-            <div class="ct-panel ct-sw">
-              <div class="sw-main">
-                <div class="sw-time" id="swTime">00:00.00</div>
-                <div class="sw-laps" id="swLaps"></div>
-              </div>
-              <div class="t-row">
-                <button class="pill orange" id="swToggle" data-act="sw-toggle">Bắt đầu</button>
-                <button class="pill gray" id="swLapBtn" data-act="sw-lap">Vòng</button>
-              </div>
-            </div>
           </section>
         </div>
       </div>
@@ -143,14 +109,12 @@
         <div class="ring-row">
           <div class="ring-icon" id="ringIcon"></div>
           <div class="ring-text">
-            <div class="ring-title" id="ringTitle">Báo thức</div>
+            <div class="ring-title" id="ringTitle">Nhắc</div>
             <div class="ring-sub" id="ringSub"></div>
           </div>
         </div>
         <div class="ring-actions">
-          <button class="pbtn tint" id="ringRestart" data-act="ring-restart">Bắt đầu lại</button>
-          <button class="pbtn tint" id="ringSnooze" data-act="ring-snooze">Báo lại 5 phút</button>
-          <button class="pbtn light" id="ringStop" data-act="ring-stop">Tắt</button>
+          <button class="pbtn light" id="ringStop" data-act="ring-stop">Xong</button>
         </div>
       </div>
 

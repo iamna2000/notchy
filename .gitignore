@@ -2,3 +2,5 @@ node_modules/
 electron.zip
 *.log
 native/target/
+dist/
+bin/

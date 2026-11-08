@@ -1,12 +1,68 @@
 {
   "name": "dynamic-island-windows",
   "version": "3.2.0",
-  "description": "Dynamic Island cho Windows",
+  "description": "Notchy: viÃªn thuá»‘c tiá»‡n Ã­ch á»Ÿ Ä‘á»‰nh mÃ n hÃ¬nh cho Windows",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "prep-bin": "node scripts/prep-bin.js",
+    "dist": "npm run prep-bin && electron-builder --win --publish never",
+    "release": "npm run prep-bin && electron-builder --win --publish always"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "productName": "Notchy",
+  "author": "Na",
+  "build": {
+    "appId": "com.na.notchy",
+    "productName": "Notchy",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "assets/**",
+      "scripts/*.ps1",
+      "bin/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Notchy-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Notchy",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "iamna2000",
+        "repo": "notchy",
+        "releaseType": "release"
+      }
+    ]
   }
 }

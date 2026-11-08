@@ -5,7 +5,9 @@
 //    "pos":12.3,"dur":200.0,"upd":<unix ms>,"rate":1.0,"shuffle":false,"live":false,"thumb":"data:..."}
 //   {"type":"media","active":false}
 //   {"type":"cover","value":bool,"cls":"<lớp cửa sổ>"}   cửa sổ khác đang nằm dưới viên thuốc
+//   {"type":"tabs","value":bool}                          có tab (thanh tab trình duyệt...) nằm ngay dưới viên thuốc
 //   {"type":"fs","value":bool}                            game / ứng dụng Direct3D toàn màn hình
+//   {"type":"full","value":bool}                          cửa sổ dưới viên thuốc đang toàn màn hình (video, trình chiếu...)
 //   {"type":"error","msg":..}
 // Vào (stdin), mỗi dòng một lệnh:
 //   play_pause | next | prev | shuffle | seek:<giây> | focus | paste | probe:<x>:<y>[;<x>:<y>...]
@@ -114,6 +116,7 @@ struct CoverQ {
     y: i32,
     ignore_pid: u32,
     res: String,
+    hwnd: HWND,
 }
 unsafe extern "system" fn cover_cb(h: HWND, l: LPARAM) -> BOOL {
     let q = &mut *(l.0 as *mut CoverQ);
@@ -139,6 +142,7 @@ unsafe extern "system" fn cover_cb(h: HWND, l: LPARAM) -> BOOL {
         return true.into();
     }
     let c = class_name(h);
+    q.hwnd = h;
     q.res = if matches!(c.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
         "desk".into()
     } else {
@@ -146,12 +150,95 @@ unsafe extern "system" fn cover_cb(h: HWND, l: LPARAM) -> BOOL {
     };
     false.into()
 }
-fn cover_at(x: i32, y: i32, ignore_pid: u32) -> String {
-    let mut q = CoverQ { x, y, ignore_pid, res: String::new() };
+fn cover_at(x: i32, y: i32, ignore_pid: u32) -> (String, HWND) {
+    let mut q = CoverQ { x, y, ignore_pid, res: String::new(), hwnd: HWND::default() };
     unsafe {
         let _ = EnumWindows(Some(cover_cb), LPARAM(&mut q as *mut CoverQ as isize));
     }
-    q.res
+    (q.res, q.hwnd)
+}
+
+// ---------- Tab nằm dưới viên thuốc (UI Automation) ----------
+// Cửa sổ bên dưới có thanh tab (Chrome/Edge/Brave, Explorer...): đọc khung chữ nhật của từng tab, xem có tab nào
+// chồng lên vùng viên thuốc không. Danh sách tab lưu lại ~3 giây (chỉ đọc lại vị trí mỗi lần), đổi cửa sổ thì đọc lại.
+// Chỉ duyệt khung giao diện, bỏ qua nội dung trang web (Document) cho nhanh.
+struct TabProbe {
+    uia: Option<windows::Win32::UI::Accessibility::IUIAutomation>,
+    win: HWND,
+    tabs: Vec<IUIAutomationElement>,
+    at: Option<Instant>,
+}
+impl TabProbe {
+    fn new() -> Self { TabProbe { uia: None, win: HWND::default(), tabs: Vec::new(), at: None } }
+    fn rescan(&mut self, w: HWND) {
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::UI::Accessibility::{CUIAutomation, UIA_DocumentControlTypeId, UIA_TabItemControlTypeId};
+        self.win = w;
+        self.tabs.clear();
+        self.at = Some(Instant::now());
+        unsafe {
+            if self.uia.is_none() {
+                self.uia = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok();
+            }
+            let Some(uia) = &self.uia else { return };
+            let Ok(walker) = uia.ControlViewWalker() else { return };
+            let Ok(root) = uia.ElementFromHandle(w) else { return };
+            let mut queue = std::collections::VecDeque::from([(root, 0u32)]);
+            let mut seen = 0;
+            while let Some((el, depth)) = queue.pop_front() {
+                seen += 1;
+                if seen > 500 { break; }
+                let ct = el.CurrentControlType().unwrap_or_default();
+                if ct == UIA_TabItemControlTypeId { self.tabs.push(el); continue; }
+                if ct == UIA_DocumentControlTypeId || depth >= 14 { continue; }
+                let mut child = walker.GetFirstChildElement(&el).ok();
+                while let Some(c) = child {
+                    child = walker.GetNextSiblingElement(&c).ok();
+                    queue.push_back((c, depth + 1));
+                }
+            }
+        }
+    }
+    // (x0..x1, y): vùng ngang của viên thuốc và cạnh dưới của nó (toạ độ màn hình)
+    fn hit(&mut self, w: HWND, x0: i32, x1: i32, y: i32) -> bool {
+        if w.is_invalid() { self.win = HWND::default(); self.tabs.clear(); return false; }
+        let stale = self.at.map_or(true, |t| t.elapsed() > Duration::from_millis(3000));
+        if w != self.win || stale { self.rescan(w); }
+        for t in &self.tabs {
+            let Ok(r) = (unsafe { t.CurrentBoundingRectangle() }) else { continue };
+            if r.right <= r.left || r.bottom <= r.top { continue; } // tab bị ẩn / cuộn khuất
+            if r.right > x0 && r.left < x1 && r.top <= y && r.bottom >= y - 40 { return true; }
+        }
+        false
+    }
+}
+// Lớp cửa sổ có thanh tab đáng dò: Chromium (Chrome, Edge, Brave, Cốc Cốc...), Firefox, Explorer.
+// Các cửa sổ khác (game, ứng dụng toàn màn hình...) bỏ qua: không gọi UI Automation, tránh chậm hoặc treo.
+fn tabbed_class(c: &str) -> bool {
+    matches!(c, "Chrome_WidgetWin_1" | "MozillaWindowClass" | "CabinetWClass")
+}
+// Luồng dò tab: nhận (hwnd, x0, x1, y), hwnd = 0 nghĩa là không có cửa sổ có tab bên dưới.
+// Chạy riêng để UI Automation chậm (trình duyệt vừa bật trợ năng...) không làm đứng cập nhật nhạc.
+fn spawn_tab_worker() -> mpsc::SyncSender<(isize, i32, i32, i32)> {
+    let (tx, rx) = mpsc::sync_channel::<(isize, i32, i32, i32)>(1);
+    std::thread::spawn(move || {
+        unsafe {
+            use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let mut tp = TabProbe::new();
+        let mut last: Option<bool> = None;
+        let mut seen: (bool, u32) = (false, 0); // kết quả gần nhất + số lần liền nhau (chống nhấp nháy)
+        while let Ok((h, x0, x1, y)) = rx.recv() {
+            let t = h != 0 && tp.hit(HWND(h as *mut _), x0, x1, y);
+            seen = if seen.0 == t { (t, seen.1 + 1) } else { (t, 1) };
+            if seen.1 >= 2 && last != Some(t) {
+                last = Some(t);
+                emit(json!({ "type": "tabs", "value": t }));
+            }
+        }
+    });
+    tx
 }
 
 // Đưa cửa sổ của trình phát lên trước. Ưu tiên cửa sổ có tiêu đề chứa tên bài (đúng tab YouTube đang phát).
@@ -284,6 +371,12 @@ fn focus_app(names: Vec<String>, title: &str, browser: bool) -> bool {
                 None => log_err("focus: khong tim thay tab dang phat, chi mo cua so trinh duyet"),
             }
         }
+        bring_front(w);
+        true
+    }
+}
+fn bring_front(w: HWND) {
+    unsafe {
         if IsIconic(w).as_bool() {
             let _ = ShowWindow(w, SW_RESTORE);
         }
@@ -302,8 +395,113 @@ fn focus_app(names: Vec<String>, title: &str, browser: bool) -> bool {
             let _ = SetForegroundWindow(w);
             keybd_event(0x12, 0, KEYEVENTF_KEYUP, 0);
         }
-        true
     }
+}
+
+// Cửa sổ đang ở chế độ toàn màn hình: phủ kín đúng màn hình chứa nó (kể cả chỗ của taskbar) và không phải
+// cửa sổ phóng to thường. Gồm video toàn màn hình trên trình duyệt (YouTube, Netflix...), VLC, PowerPoint trình chiếu,
+// game cửa sổ không viền.
+fn is_fullscreen_win(w: HWND) -> bool {
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONULL};
+    use windows::Win32::UI::WindowsAndMessaging::GWL_STYLE;
+    if w.is_invalid() {
+        return false;
+    }
+    unsafe {
+        let c = class_name(w);
+        if matches!(c.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+            return false;
+        }
+        // Cửa sổ thường (kể cả phóng to, khi taskbar tự ẩn cũng phủ kín màn hình) có thanh tiêu đề WS_CAPTION;
+        // toàn màn hình thì bỏ (trình duyệt vẫn giữ cờ WS_MAXIMIZE khi xem video toàn màn hình nên không dựa vào cờ đó)
+        if GetWindowLongW(w, GWL_STYLE) as u32 & 0x00C0_0000 == 0x00C0_0000 {
+            return false;
+        }
+        let mut r = RECT::default();
+        if GetWindowRect(w, &mut r).is_err() {
+            return false;
+        }
+        let mon = MonitorFromWindow(w, MONITOR_DEFAULTTONULL);
+        if mon.is_invalid() {
+            return false;
+        }
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+            return false;
+        }
+        let m = mi.rcMonitor;
+        // Chrome/Brave toàn màn hình chừa hụt 1 điểm ảnh ở cạnh dưới (để taskbar tự ẩn vẫn bật lên được): cho sai số 2px
+        r.left <= m.left + 2 && r.top <= m.top + 2 && r.right >= m.right - 2 && r.bottom >= m.bottom - 2
+    }
+}
+// Cửa sổ đang ở trước là game / ứng dụng toàn màn hình (không chuyển cửa sổ khi đó)
+fn fg_fullscreen() -> bool {
+    unsafe {
+        SHQueryUserNotificationState().map_or(false, |s| s == QUNS_RUNNING_D3D_FULL_SCREEN)
+            || is_fullscreen_win(GetForegroundWindow())
+    }
+}
+
+// YouTube trên trình duyệt không đăng ký "bài sau / bài trước" với Windows khi phát video lẻ (ngoài danh sách phát).
+// Dùng phím tắt của chính YouTube: tạm chọn tab YouTube đang phát, gửi Shift+N (bài sau) / Shift+P (bài trước),
+// rồi trả lại tab đang xem và cửa sổ đang dùng. Bỏ qua khi đang ở game / ứng dụng toàn màn hình.
+fn yt_skip(aumid: &str, title: &str, vk: u8) -> bool {
+    use windows::Win32::UI::Accessibility::{IUIAutomationSelectionItemPattern, UIA_SelectionItemPatternId};
+    use windows::Win32::UI::WindowsAndMessaging::SW_MINIMIZE;
+    let (names, browser) = player_names(aumid);
+    if !browser {
+        return false;
+    }
+    if fg_fullscreen() {
+        log_err("yt: dang o ung dung toan man hinh, khong chuyen bai");
+        return false;
+    }
+    let tabs = scan_tabs(&app_windows(names));
+    let tl = title.trim().to_lowercase();
+    let Some(ti) = tabs
+        .iter()
+        .position(|t| !tl.is_empty() && t.lower.contains(&tl))
+        .or_else(|| tabs.iter().position(|t| t.audible))
+    else {
+        log_err("yt: khong tim thay tab dang phat");
+        return false;
+    };
+    let t = &tabs[ti];
+    if !t.lower.contains("youtube") {
+        return false;
+    }
+    unsafe {
+        let pat = |el: &IUIAutomationElement| el.GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(UIA_SelectionItemPatternId).ok();
+        // Tab đang được chọn trong cùng cửa sổ, để trả lại sau
+        let old_tab = tabs.iter().position(|o| {
+            o.win == t.win && pat(&o.el).and_then(|p| p.CurrentIsSelected().ok()).map_or(false, |b| b.as_bool())
+        });
+        let old_fg = GetForegroundWindow();
+        let was_min = IsIconic(t.win).as_bool();
+        let Some(p) = pat(&t.el) else { return false };
+        if p.Select().is_err() {
+            return false;
+        }
+        bring_front(t.win);
+        std::thread::sleep(Duration::from_millis(160));
+        keybd_event(0x10, 0, KEYBD_EVENT_FLAGS(0), 0); // Shift
+        keybd_event(vk, 0, KEYBD_EVENT_FLAGS(0), 0);
+        keybd_event(vk, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0);
+        std::thread::sleep(Duration::from_millis(140));
+        if let Some(oi) = old_tab.filter(|&oi| oi != ti) {
+            if let Some(op) = pat(&tabs[oi].el) {
+                let _ = op.Select();
+            }
+        }
+        if was_min {
+            let _ = ShowWindow(t.win, SW_MINIMIZE);
+        }
+        if !old_fg.is_invalid() && old_fg != t.win {
+            bring_front(old_fg);
+        }
+    }
+    true
 }
 // Đoán tên tiến trình từ AUMID của phiên nhạc; kèm cờ "là trình duyệt" (để chọn đúng tab)
 const BROWSERS: [&str; 6] = ["msedge", "chrome", "firefox", "brave", "opera", "browser"];
@@ -605,6 +803,36 @@ fn run_command(mgr: Option<&Manager>, cmd: &str, ov: Option<&str>) {
         log_err(&format!("cmd {}: bo qua, trinh duyet dang gan dieu khien cho tab tat tieng", cmd));
         return;
     }
+    // Trình phát không hỗ trợ bài sau / bài trước (YouTube video lẻ): dùng phím tắt của YouTube
+    if let (Some(s), true) = (&s, cmd == "next" || cmd == "prev") {
+        let enabled = s
+            .GetPlaybackInfo()
+            .and_then(|i| i.Controls())
+            .and_then(|c| if cmd == "next" { c.IsNextEnabled() } else { c.IsPreviousEnabled() })
+            .unwrap_or(true);
+        if !enabled {
+            // Bài trước khi đã nghe quá 3 giây: tua về đầu bài (giống trình phát nhạc), khỏi phải chuyển tab
+            if cmd == "prev" {
+                let pos = s.GetTimelineProperties().and_then(|t| Ok(t.Position()?.Duration - t.StartTime()?.Duration)).unwrap_or(0);
+                if pos > 30_000_000 {
+                    let ok = s
+                        .GetTimelineProperties()
+                        .and_then(|t| t.StartTime())
+                        .and_then(|st| s.TryChangePlaybackPositionAsync(st.Duration))
+                        .and_then(|a| a.get())
+                        .unwrap_or(false);
+                    if ok {
+                        return;
+                    }
+                }
+            }
+            let aumid = s.SourceAppUserModelId().map(|h| h.to_string()).unwrap_or_default();
+            let title = s.TryGetMediaPropertiesAsync().and_then(|a| a.get()).and_then(|p| p.Title()).map(|h| h.to_string()).unwrap_or_default();
+            if yt_skip(&aumid, &title, if cmd == "next" { 0x4E } else { 0x50 }) {
+                return;
+            }
+        }
+    }
     if let Some(s) = &s {
         // Ok(true): trình phát nhận lệnh; Ok(false): trình phát từ chối (Windows trả về false)
         let r: windows::core::Result<bool> = (|| {
@@ -680,7 +908,11 @@ fn main() {
     };
     let mut probe: Vec<(i32, i32)> = Vec::new();
     let mut last_cover: Option<bool> = None;
+    let tab_tx = spawn_tab_worker();
+    let mut next_tabs = Instant::now();
     let mut last_fs: Option<bool> = None;
+    let mut d3d = false; // game Direct3D toàn màn hình
+    let mut under_full = false; // cửa sổ dưới viên thuốc đang toàn màn hình (đã báo app)
     let mut burst = 0u32;
     let mut next_media = Instant::now();
     let mut next_fs = Instant::now();
@@ -733,9 +965,17 @@ fn main() {
         if !probe.is_empty() {
             if now >= next_cover {
                 let mut cls = String::new();
+                let mut under = HWND::default();
+                let mut top = HWND::default();
                 for &(x, y) in &probe {
-                    let c = cover_at(x, y, parent_pid);
-                    if !c.is_empty() && c != "desk" { cls = c; break; }
+                    let (c, h) = cover_at(x, y, parent_pid);
+                    if !c.is_empty() && c != "desk" { if tabbed_class(&c) { under = h; } top = h; cls = c; break; }
+                }
+                // Cửa sổ bên dưới đang toàn màn hình (video, trình chiếu, game không viền): app thu viên thuốc thành vạch
+                let full = is_fullscreen_win(top);
+                if full != under_full {
+                    under_full = full;
+                    emit(json!({ "type": "full", "value": full }));
                 }
                 let cov = !cls.is_empty();
                 if last_cover != Some(cov) {
@@ -743,17 +983,27 @@ fn main() {
                     emit(json!({ "type": "cover", "value": cov, "cls": cls }));
                 }
                 next_cover = now + Duration::from_millis(200);
+                // Có tab nằm dưới viên thuốc không: ~0,6 giây một lần; chỉ báo khi 2 lần liền cùng kết quả
+                if now >= next_tabs {
+                    let x0 = probe.iter().map(|p| p.0).min().unwrap_or(0) - 14;
+                    let x1 = probe.iter().map(|p| p.0).max().unwrap_or(0) + 14;
+                    let y = probe.iter().map(|p| p.1).max().unwrap_or(0);
+                    // Luồng dò đang bận thì bỏ qua lượt này (không chờ)
+                    let _ = tab_tx.try_send((under.0 as isize, x0, x1, y));
+                    next_tabs = now + Duration::from_millis(600);
+                }
             }
         }
 
         // --- Game / ứng dụng Direct3D toàn màn hình: ẩn hẳn ---
         if now >= next_fs {
             if let Ok(st) = unsafe { SHQueryUserNotificationState() } {
-                let fs = st == QUNS_RUNNING_D3D_FULL_SCREEN;
-                if last_fs != Some(fs) {
-                    last_fs = Some(fs);
-                    emit(json!({ "type": "fs", "value": fs }));
-                }
+                d3d = st == QUNS_RUNNING_D3D_FULL_SCREEN;
+            }
+            let fs = d3d;
+            if last_fs != Some(fs) {
+                last_fs = Some(fs);
+                emit(json!({ "type": "fs", "value": fs }));
             }
             next_fs = now + Duration::from_millis(1600);
         }

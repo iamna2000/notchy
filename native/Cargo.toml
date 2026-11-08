@@ -2,7 +2,7 @@
 name = "di-native"
 version = "0.1.0"
 edition = "2021"
-description = "Cầu nối native (Windows) cho Dynamic Island: thay các script PowerShell trong scripts/"
+description = "Cầu nối native (Windows) cho Notchy: thay các script PowerShell trong scripts/"
 
 # di-media: thay scripts/media.ps1 (nhạc, ảnh bìa, điều khiển phát, cửa sổ che, toàn màn hình, dán, mở trình phát)
 [[bin]]
@@ -23,6 +23,7 @@ features = [
   "Win32_System_Com",
   "Win32_UI_Accessibility",
   "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
   "Win32_System_Threading",
   "Win32_System_WinRT",
   "Win32_UI_Input_KeyboardAndMouse",

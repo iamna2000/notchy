@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const api = window.api || new Proxy({}, { get: (_t, k) => (k === 'flags' ? () => Promise.resolve({}) : () => {}) });
+  const api = window.api || new Proxy({}, { get: () => () => {} });
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const pad = (n) => String(n).padStart(2, '0');
@@ -18,10 +18,9 @@
   const F = (inner) => `<svg viewBox="0 0 24 24" fill="currentColor">${inner}</svg>`;
   const ICON = {
     music: F('<path d="M16.5 3.2 9.6 4.6a1 1 0 0 0-.8 1v9.1a3.2 3.2 0 1 0 2 3V8.6l4.7-1v5.1a3.2 3.2 0 1 0 2 3V4.2a1 1 0 0 0-1-1z"/>'),
-    alarm: L('<circle cx="12" cy="13.2" r="7.2"/><path d="M12 9.2v4.2l2.6 1.6M4.4 6.2l2.8-2.6M19.6 6.2l-2.8-2.6"/>'),
+    weather: L('<path d="M8.6 3.2v1.4M3.4 8.4H2M4.9 4.7l1 1M12.3 4.7l-1 1"/><path d="M5.7 11.2a3.2 3.2 0 1 1 6-2.1"/><path d="M8.8 20h8.1a3.3 3.3 0 0 0 .5-6.55 4.4 4.4 0 0 0-8.5-.95A3.75 3.75 0 0 0 8.8 20z"/>', 1.8),
     clip: F('<path d="M9.2 3a2 2 0 0 0-1.9 1.4H6.8A2.8 2.8 0 0 0 4 7.2v11A2.8 2.8 0 0 0 6.8 21h10.4a2.8 2.8 0 0 0 2.8-2.8v-11a2.8 2.8 0 0 0-2.8-2.8h-.5A2 2 0 0 0 14.8 3zm0 1.6h5.6a.4.4 0 0 1 .4.4v.6a.4.4 0 0 1-.4.4H9.2a.4.4 0 0 1-.4-.4V5a.4.4 0 0 1 .4-.4z"/>'),
     gauge: L('<path d="M4.6 17.5a8.6 8.6 0 1 1 14.8 0"/><path d="M12 13.2l3.6-4.4"/><circle cx="12" cy="13.6" r="1.4" fill="currentColor" stroke="none"/>', 2),
-    toggles: F('<path d="M7.5 3.5h9a4 4 0 0 1 0 8h-9a4 4 0 0 1 0-8zM16.5 5.6a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8zM7.5 12.5h9a4 4 0 0 1 0 8h-9a4 4 0 0 1 0-8zM7.5 14.6a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8z" fill-rule="evenodd"/>'),
     play: F('<path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.4-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/>'),
     pause: F('<rect x="6.2" y="4.8" width="4.2" height="14.4" rx="1.3"/><rect x="13.6" y="4.8" width="4.2" height="14.4" rx="1.3"/>'),
     next: F('<path d="M3.6 6.6v10.8a1 1 0 0 0 1.55.84l7.2-4.7v3.86a1 1 0 0 0 1.55.84l7.6-4.9a1 1 0 0 0 0-1.68l-7.6-4.9a1 1 0 0 0-1.55.84v3.86l-7.2-4.7a1 1 0 0 0-1.55.84z"/>'),
@@ -57,12 +56,7 @@
     down: L('<path d="m6 9.5 6 6 6-6"/>'),
     calendar: L('<rect x="3.8" y="5.2" width="16.4" height="15" rx="3.2"/><path d="M3.8 10.2h16.4M8.4 3.2v4M15.6 3.2v4"/>', 1.8),
     clock: F('<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm.8 4.6v4.2l2.9 1.7a.8.8 0 0 1-.8 1.4l-3.3-1.9a.8.8 0 0 1-.4-.7V7.6a.8.8 0 0 1 1.6 0z" fill-rule="evenodd"/>'),
-    hourglass: L('<path d="M7 3.5h10M7 20.5h10M8 3.5v3.2c0 1.6 1 2.6 2.4 3.6L12 11.5l1.6-1.2C15 9.3 16 8.3 16 6.7V3.5M8 20.5v-3.2c0-1.6 1-2.6 2.4-3.6l1.6-1.2 1.6 1.2c1.4 1 2.4 2 2.4 3.6v3.2"/>', 1.8),
-    stopwatch: L('<circle cx="12" cy="13.6" r="7"/><path d="m12 13.6 3-3M9.5 3h5M12 3v3.4"/>', 1.8),
-    moon: F('<path d="M20.4 14.6A8.4 8.4 0 0 1 9.4 3.6a.6.6 0 0 0-.8-.7A9.2 9.2 0 1 0 21.1 15.4a.6.6 0 0 0-.7-.8z"/>'),
-    coffee: L('<path d="M5 9h11v5.5a4.5 4.5 0 0 1-4.5 4.5h-2A4.5 4.5 0 0 1 5 14.5z"/><path d="M16 10.5h1.2a2.3 2.3 0 0 1 0 4.6H16M8.5 3.5v2M12 3.5v2"/>', 1.8),
     bell: L('<path d="M6 16.6h12l-1.6-2.2v-4.2a4.4 4.4 0 0 0-8.8 0v4.2z"/><path d="M10 19.6a2 2 0 0 0 4 0"/>'),
-    reset: L('<path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5M4.5 4.5v4h4"/>', 2),
     shelf: L('<path d="M3.5 8.2a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>', 1.8),
     file: L('<path d="M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M13.5 3.5V8H18"/>', 1.7),
     bolt: F('<path d="M13.4 2.6 5.6 13.2a.7.7 0 0 0 .56 1.1h4.1l-1 6.5a.5.5 0 0 0 .9.36l7.8-10.6a.7.7 0 0 0-.56-1.12h-4.1l1-6.5a.5.5 0 0 0-.9-.34z"/>'),
@@ -74,34 +68,35 @@
   const WD_FULL = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
   const WD_SHORT = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
-  const TABS = ['music', 'sys', 'calendar', 'alarm', 'clip', 'shelf', 'ctrl'];
   const TOPBAR = 46;
-  const PX_MIN = 8; // 1 phút = 8px trên thước hẹn giờ
 
   const today0 = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
   const ymd = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-  const oldTab = store.get('tab', 'music');
   const S = {
     hover: false, hoverRaw: false, peek: false, hidden: false, typing: false,
-    tab: TABS.includes(oldTab) ? oldTab : (oldTab === 'timer' ? 'ctrl' : 'music'),
+    tab: 'music', // trang mặc định; rời viên thuốc quá TAB_RESET thì tự quay về (xem api.onHover)
     ring: null,
     media: { active: false }, mediaError: '', drag: null, outOpen: false,
-    sys: { vol: -1, mute: false, bri: -1, devices: [], audio: true },
-    flags: { dnd: false, awake: false },
-    alarms: store.get('alarms', []), editor: null, snoozes: [],
+    sys: { vol: -1, mute: false, devices: [], audio: true },
+    weather: null,
     notes: store.get('notes', {}),
     sel: today0(), calMonth: store.get('calMonth', false),
     clip: [], clipQ: '', shelf: [], notice: null,
-    ctPanel: store.get('ctPanel', 'timer'),
-    timer: { total: store.get('ttotal', 300), remaining: store.get('ttotal', 300), endTs: 0, running: false },
-    sw: { running: false, start: 0, base: 0, laps: [] },
+    wxOpen: store.get('wxOpen', false), // Thời tiết: false = gọn (1 lưu ý, dải 7 ngày nhỏ), true = đầy đủ
+    shelfOpen: store.get('shelfOpen', false), // Kệ tạm: false = một hàng cuộn ngang, true = lưới 5 cột (tối đa 3 hàng rồi cuộn dọc)
   };
 
   /* ================= Bố cục / hoạt ảnh viên thuốc ================= */
   const island = $('#island');
   const compactEl = $('#compact');
   let layoutKey = '';
+  const SH_COLS = 5, SH_ROW = 70; // lưới Kệ tạm khi mở rộng (khớp CSS .shelf-list.grid)
+  let clipH = 0; // chiều cao nội dung tab Bảng tạm: viên thuốc dài theo số mục (tối đa ~6 mục rồi cuộn)
+  let wxH = 0; // chiều cao nội dung tab Thời tiết (đo sau khi vẽ) để viên thuốc mở vừa khít
+  const wxHs = { full: 0, compact: 0 }; // đo sẵn cả hai chế độ để đổi qua lại không phải đo giữa lúc đang chuyển động
   let closeTimer = null, peekTimer = null;
+  const TAB_RESET = 60000; // thu gọn quá 1 phút: lần mở sau về lại tab Nhạc
+  let leftAt = 0;          // lúc viên thuốc thu gọn lần cuối
 
   const hasMusic = () => !!(S.media.active && S.media.title && (S.media.status === 'Playing' || S.media.status === 'Paused'));
   // Viên thuốc thu gọn chỉ hiện nhạc khi đang phát, hoặc vừa tạm dừng < 5 giây (bấm tạm dừng rồi phát lại ngay
@@ -134,10 +129,14 @@
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) + (S.media.override ? 30 : 0) : 168;
       case 'sys': return 302;
       case 'calendar': return S.calMonth ? 368 : 264 + Math.min(3, calEvents()) * 46;
-      case 'alarm': return 312;
-      case 'clip': return 352;
-      case 'shelf': return 332;
-      default: return (S.sys.bri >= 0 ? 304 : 262);
+      case 'weather': return 50 + (wxH || 330) + 16;
+      case 'clip': return 50 + (clipH || 300) + 12;
+      case 'shelf': {
+        if (!S.shelfOpen || !S.shelf.length) return 210;
+        const rows = Math.min(3, Math.ceil(S.shelf.length / SH_COLS));
+        return 114 + rows * SH_ROW + (rows - 1) * 8 + 4;
+      }
+      default: return 168;
     }
   }
   function target() {
@@ -149,7 +148,6 @@
     // Không phát gì: rộng ra để chứa ngày · giờ · thời tiết
     let c = { w: wxFresh() ? 236 : 196, h: 34, r: 17, ear: 9 };
     if (compactMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
-    else if (S.timer.running) c = { w: 210, h: 34, r: 17, ear: 9 };
     // Khi ẩn: thanh Home kiểu iPhone (bo tròn hết, cách mép trên 3px; xem CSS)
     if (S.hidden) return { mode: 'hidden', w: 100, h: 4, r: 2, ear: 0 };
     return Object.assign(c, { mode: 'compact' });
@@ -172,7 +170,7 @@
     clearTimeout(closeTimer);
     closeTimer = setTimeout(() => {
       if (S.hoverRaw || S.typing || drag) return;
-      S.hover = false; S.open = false;
+      S.hover = false; S.open = false; leftAt = Date.now();
       // Lần rê chuột sau mở lại bảng nhạc ở dạng gọn: đóng phần chọn thiết bị phát nếu còn mở
       if (S.outOpen) { S.outOpen = false; musicSig = ''; renderMusic(); }
       applyLayout();
@@ -181,7 +179,11 @@
   api.onHover((v) => {
     S.hoverRaw = v;
     clearTimeout(closeTimer);
-    if (v) { S.hover = true; applyLayout(); requestSys(); }
+    if (v) {
+      if (leftAt && Date.now() - leftAt >= TAB_RESET && S.tab !== 'music') setTab('music');
+      leftAt = 0;
+      S.hover = true; applyLayout(); requestSys();
+    }
     else collapseSoon(380);
   });
   api.onHidden((v) => { S.hidden = !!v; applyLayout(); });
@@ -193,11 +195,10 @@
   });
 
   /* ================= Tab ================= */
-  const TB_ICON = { music: ICON.music, sys: ICON.gauge, alarm: ICON.alarm, clip: ICON.clip, shelf: ICON.shelf, ctrl: ICON.toggles };
+  const TB_ICON = { music: ICON.music, sys: ICON.gauge, weather: ICON.weather, clip: ICON.clip, shelf: ICON.shelf };
   $$('.tb').forEach((b) => { if (TB_ICON[b.dataset.tab]) b.innerHTML = TB_ICON[b.dataset.tab]; });
-  function setTab(id, auto) {
+  function setTab(id) {
     S.tab = id;
-    if (!auto) store.set('tab', id);
     $$('.tb').forEach((b) => b.classList.toggle('on', b.dataset.tab === id));
     $$('.view').forEach((v) => v.classList.toggle('on', v.dataset.view === id));
     renderTopDate();
@@ -215,11 +216,6 @@
   /* ================= Định dạng ================= */
   const fmtClock = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const fmtTrack = (sec) => { sec = Math.max(0, Math.floor(sec)); const h = Math.floor(sec / 3600); return h > 0 ? `${h}:${pad(Math.floor((sec % 3600) / 60))}:${pad(sec % 60)}` : `${Math.floor(sec / 60)}:${pad(sec % 60)}`; };
-  const fmtTimer = (sec) => { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60; return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`; };
-  const fmtSW = (ms) => {
-    const cs = Math.floor(ms / 10) % 100, s = Math.floor(ms / 1000) % 60, m = Math.floor(ms / 60000) % 60, h = Math.floor(ms / 3600000);
-    return (h > 0 ? `${h}:${pad(m)}` : pad(m)) + `:${pad(s)}.${pad(cs)}`;
-  };
   function lunarOf(d) {
     const r = window.Lunar.solarToLunar(d.getDate(), d.getMonth() + 1, d.getFullYear(), 7);
     return { d: r[0], m: r[1], y: r[2], leap: r[3] === 1 };
@@ -385,28 +381,21 @@
   function renderVol() {
     const v = S.sys.vol, ok = v >= 0;
     const frac = ok ? (S.sys.mute ? 0 : v) : 0;
-    const sl = $('#slVol');
-    if (sl) { setSl(sl, frac, ok ? (S.sys.mute ? 'Tắt tiếng' : Math.round(v * 100) + '%') : '--'); sl.classList.toggle('off', !ok); }
     const b = $('.bar[data-vol] i');
     if (b) b.style.width = frac * 100 + '%';
-  }
-  function renderBri() {
-    const b = S.sys.bri, sl = $('#slBri');
-    sl.style.display = b >= 0 ? '' : 'none';
-    if (b >= 0) setSl(sl, b / 100, Math.round(b) + '%');
   }
   api.onSys((m) => {
     if (!m || (m.type !== 'sys' && m.type !== 'sys-error')) return;
     if (m.type === 'sys') {
-      if (drag && (drag.k === 'sl' || drag.k === 'vol2')) { const keep = S.sys.vol, kb = S.sys.bri; Object.assign(S.sys, m); S.sys.vol = keep; S.sys.bri = kb; }
+      if (drag && drag.k === 'vol2') { const keep = S.sys.vol; Object.assign(S.sys, m); S.sys.vol = keep; }
       else Object.assign(S.sys, m);
       if (m.devices) { diffDevices(m.devices); renderOut(); }
-      renderVol(); renderBri(); applyLayout();
+      renderVol(); applyLayout();
     }
   });
   let sysLast = 0;
   function requestSys(force) {
-    const need = S.tab === 'ctrl' || (S.tab === 'music' && S.outOpen);
+    const need = S.tab === 'music' && S.outOpen;
     if (!need || !(S.hover || S.peek)) return;
     const now = Date.now();
     if (!force && now - sysLast < 2000) return;
@@ -421,32 +410,25 @@
     sendTimers[key + '_t'] = setTimeout(() => { sendTimers[key + '_t'] = 0; api.sys(sendTimers[key]); }, 70);
   }
   function setVol(f) { S.sys.vol = clamp(f, 0, 1); S.sys.mute = false; renderVol(); sendThrottled('vol', 'vol:' + S.sys.vol.toFixed(2)); }
-  function setBri(f) { S.sys.bri = Math.round(clamp(f, 0, 1) * 100); renderBri(); sendThrottled('bri', 'bri:' + Math.max(1, S.sys.bri)); }
 
-  /* ----- Thanh trượt trắng/đen ----- */
-  function buildSl(el, label) {
-    el.innerHTML = `<div class="sl-base"><span>${label}</span><span class="v"></span></div><div class="sl-top"><span>${label}</span><span class="v"></span><i class="sl-grip"></i></div>`;
-  }
-  function setSl(el, frac, txt) {
-    el.style.setProperty('--p', (clamp(frac, 0, 1) * 100).toFixed(1) + '%');
-    el.querySelectorAll('.v').forEach((v) => { v.textContent = txt; });
-  }
-
-  /* ================= Thời tiết (viên thuốc thu gọn khi không phát gì) ================= */
-  // Icon nhiều màu kiểu thời tiết của Apple; chọn theo mã thời tiết WMO của Open-Meteo
+  /* ================= Thời tiết: icon (có hiệu ứng) ================= */
+  // Icon nhiều màu kiểu thời tiết của Apple; chọn theo mã thời tiết WMO của Open-Meteo.
+  // Các phần có class a-* chỉ chuyển động khi nằm trong khối .wxa (tab Thời tiết), xem CSS.
   const WX_SVG = (inner) => `<svg viewBox="0 0 24 24">${inner}</svg>`;
-  const WX_CLOUD = (y = 0, fill = '#e5e5ea') => `<path transform="translate(0 ${y})" fill="${fill}" d="M7.2 18.5h10.1a3.9 3.9 0 0 0 .5-7.77 5.3 5.3 0 0 0-10.2-1.1A4.45 4.45 0 0 0 7.2 18.5z"/>`;
+  const WX_CLOUD = (y = 0, fill = '#e5e5ea') => `<g class="a-cl"><path transform="translate(0 ${y})" fill="${fill}" d="M7.2 18.5h10.1a3.9 3.9 0 0 0 .5-7.77 5.3 5.3 0 0 0-10.2-1.1A4.45 4.45 0 0 0 7.2 18.5z"/></g>`;
   const WX_SUNRAYS = (cx, cy, r, len) => Array.from({ length: 8 }, (_, i) => { const a = (i * Math.PI) / 4, c = Math.cos(a), s = Math.sin(a); return `M${(cx + c * r).toFixed(2)} ${(cy + s * r).toFixed(2)}L${(cx + c * (r + len)).toFixed(2)} ${(cy + s * (r + len)).toFixed(2)}`; }).join('');
+  const WX_SUN = (cx, cy, r, rr, len, w) => `<path class="a-ray" d="${WX_SUNRAYS(cx, cy, rr, len)}" stroke="#ffd60a" stroke-width="${w}" stroke-linecap="round"/><circle class="a-core" cx="${cx}" cy="${cy}" r="${r}" fill="#ffd60a"/>`;
+  const WX_MOON = (d) => `<path class="a-moon" fill="#e8e4ff" d="${d}"/>`;
   const WX = {
-    sun: WX_SVG(`<circle cx="12" cy="12" r="4.6" fill="#ffd60a"/><path d="${WX_SUNRAYS(12, 12, 6.8, 2.6)}" stroke="#ffd60a" stroke-width="1.9" stroke-linecap="round"/>`),
-    moon: WX_SVG('<path fill="#e8e4ff" d="M19.6 14.6A8 8 0 0 1 9.4 4.4a8 8 0 1 0 10.2 10.2z"/>'),
-    sunCloud: WX_SVG(`<circle cx="9" cy="8.6" r="3.6" fill="#ffd60a"/><path d="${WX_SUNRAYS(9, 8.6, 5.3, 1.9)}" stroke="#ffd60a" stroke-width="1.6" stroke-linecap="round"/>${WX_CLOUD(1.4)}`),
-    moonCloud: WX_SVG(`<path fill="#e8e4ff" d="M14.6 10.4A5.4 5.4 0 0 1 7.6 3.4a5.4 5.4 0 1 0 7 7z"/>${WX_CLOUD(1.4)}`),
-    cloud: WX_SVG(WX_CLOUD(0.6)),
-    fog: WX_SVG(`${WX_CLOUD(-3, '#c7c7cc')}<path d="M5 18.2h14M7.5 21h9" stroke="#c7c7cc" stroke-width="1.8" stroke-linecap="round"/>`),
-    rain: WX_SVG(`${WX_CLOUD(-3.2)}<path d="M8.6 17.8l-1 2.6M12.4 17.8l-1 2.6M16.2 17.8l-1 2.6" stroke="#64d2ff" stroke-width="1.9" stroke-linecap="round"/>`),
-    storm: WX_SVG(`${WX_CLOUD(-3.2)}<path fill="#ffd60a" d="M12.6 15.2l-3.1 4.3h2.4l-1 3.3 3.6-4.6h-2.5l1.3-3z"/>`),
-    snow: WX_SVG(`${WX_CLOUD(-3.2)}<g fill="#f2f2f7"><circle cx="7.6" cy="19.4" r="1.45"/><circle cx="12" cy="21.4" r="1.45"/><circle cx="16.4" cy="19.4" r="1.45"/></g>`),
+    sun: WX_SVG(WX_SUN(12, 12, 4.6, 6.8, 2.6, 1.9)),
+    moon: WX_SVG(WX_MOON('M19.6 14.6A8 8 0 0 1 9.4 4.4a8 8 0 1 0 10.2 10.2z')),
+    sunCloud: WX_SVG(`${WX_SUN(9, 8.6, 3.6, 5.3, 1.9, 1.6)}${WX_CLOUD(1.4)}`),
+    moonCloud: WX_SVG(`${WX_MOON('M14.6 10.4A5.4 5.4 0 0 1 7.6 3.4a5.4 5.4 0 1 0 7 7z')}${WX_CLOUD(1.4)}`),
+    cloud: WX_SVG(`<g class="a-cl2"><path fill="#8e8e93" d="M14.6 11.6h5.3a2.5 2.5 0 0 0 .3-4.98 3.4 3.4 0 0 0-6.55-.7 2.85 2.85 0 0 0 .95 5.68z"/></g>${WX_CLOUD(1.2)}`),
+    fog: WX_SVG(`${WX_CLOUD(-3, '#c7c7cc')}<g stroke="#c7c7cc" stroke-width="1.8" stroke-linecap="round"><path class="a-fog" d="M5 18.2h14"/><path class="a-fog" d="M7.5 21h9"/></g>`),
+    rain: WX_SVG(`${WX_CLOUD(-3.2)}<g stroke="#64d2ff" stroke-width="1.9" stroke-linecap="round"><path class="a-drop" d="M8.6 17.8l-1 2.6"/><path class="a-drop" d="M12.4 17.8l-1 2.6"/><path class="a-drop" d="M16.2 17.8l-1 2.6"/></g>`),
+    storm: WX_SVG(`${WX_CLOUD(-3.2)}<path class="a-bolt" fill="#ffd60a" d="M12.6 15.2l-3.1 4.3h2.4l-1 3.3 3.6-4.6h-2.5l1.3-3z"/>`),
+    snow: WX_SVG(`${WX_CLOUD(-3.2)}<g fill="#f2f2f7"><circle class="a-flake" cx="7.6" cy="19.4" r="1.45"/><circle class="a-flake" cx="12" cy="21.4" r="1.45"/><circle class="a-flake" cx="16.4" cy="19.4" r="1.45"/></g>`),
   };
   function wxIcon(code, day) {
     if (code === 0 || code === 1) return day ? WX.sun : WX.moon;
@@ -460,17 +442,159 @@
   }
   const WX_NAME = (c) => (c <= 1 ? 'Trời quang' : c === 2 ? 'Ít mây' : c === 3 ? 'Nhiều mây' : c === 45 || c === 48 ? 'Sương mù'
     : c >= 95 ? 'Dông' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'Tuyết' : c >= 80 ? 'Mưa rào' : c >= 61 ? 'Mưa' : c >= 51 ? 'Mưa phùn' : 'Nhiều mây');
-  // Dữ liệu quá 2 giờ (mất mạng lâu) thì không hiện, tránh hiện thời tiết cũ
+  // Dữ liệu quá 2 giờ (mất mạng lâu) thì không hiện ở viên thuốc, tránh hiện thời tiết cũ
   const wxFresh = () => !!(S.weather && Date.now() - S.weather.at < 2 * 3600000);
-  api.onWeather((w) => { S.weather = w || null; compactSig = ''; renderCompact(); applyLayout(); });
-  api.weatherGet();
   const VN_DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+  /* ================= Tab Thời tiết: hiện tại · lưu ý · 7 ngày ================= */
+  const dayOf = (d) => new Date(d.date + 'T00:00');
+  const rnd = (v) => (v == null ? '–' : Math.round(v));
+  const feelHi = (d) => (d.fhi != null ? d.fhi : d.hi);
+  const feelLo = (d) => (d.flo != null ? d.flo : d.lo);
+  function wxDayName(D, i, long) {
+    if (i === 0) return long ? 'hôm nay' : 'Hôm nay';
+    if (i === 1 && long) return 'ngày mai';
+    const t = dayOf(D[i]);
+    return long ? `${VN_DOW[t.getDay()]} ${t.getDate()}/${t.getMonth() + 1}` : VN_DOW[t.getDay()];
+  }
+  const TIP_ICON = {
+    wear: L('<path d="M9 4 4.5 6.4l1.7 3.6 1.8-.8V20h8V9.2l1.8.8 1.7-3.6L15 4a3 3 0 0 1-6 0z"/>', 1.8),
+    temp: L('<path d="M10 13.8V5.2a2 2 0 0 1 4 0v8.6a3.6 3.6 0 1 1-4 0z"/><path d="M12 9.5v6"/>', 1.8),
+    wind: L('<path d="M3 8.5h10.5A2.5 2.5 0 1 0 11 6M3 12.5h15a2.5 2.5 0 1 1-2.5 2.5M3 16.5h7"/>', 1.8),
+    ok: L('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 2.2),
+  };
+  // Ngưỡng thời tiết cực đoan (mức 1: cam, mức 2: đỏ), theo dự báo từng ngày của Open-Meteo.
+  // null <= 10 là true trong JS nên các phép so sánh "nhỏ hơn" phải kiểm tra thiếu số liệu trước.
+  const avgT = (d) => (d.hi != null && d.lo != null ? (d.hi + d.lo) / 2 : null);
+  const WX_RULES = [
+    // Nóng / rét theo cách gọi của Trung tâm Dự báo KTTV quốc gia: nắng nóng khi cao nhất ≥35°, gay gắt ≥37°;
+    // rét đậm khi nhiệt độ trung bình ngày ≤15°, rét hại ≤13°
+    { k: 'heat', ico: () => WX.sun, test: (d) => (d.hi >= 37 ? 2 : d.hi >= 35 ? 1 : 0), t: ['Nắng nóng', 'Nắng nóng gay gắt'],
+      v: (ds) => `cao nhất ${rnd(Math.max(...ds.map((d) => d.hi)))}°`, a: 'Tránh ra ngoài 11h–16h, uống nhiều nước, che chắn kỹ.' },
+    { k: 'rain', ico: () => WX.rain, test: (d) => (d.rain >= 50 ? 2 : d.rain >= 20 ? 1 : 0), t: ['Mưa to', 'Mưa rất to'],
+      v: (ds) => `tới ${rnd(Math.max(...ds.map((d) => d.rain)))} mm`, a: 'Mang áo mưa, tránh đường hay ngập và vùng dễ sạt lở.' },
+    { k: 'wind', ico: () => TIP_ICON.wind, test: (d) => (d.gust >= 75 ? 2 : d.gust >= 50 ? 1 : 0), t: ['Gió mạnh', 'Gió giật rất mạnh'],
+      v: (ds) => `giật ${rnd(Math.max(...ds.map((d) => d.gust)))} km/h`, a: 'Đi xe máy cẩn thận, tránh cây to, biển quảng cáo.' },
+    { k: 'storm', ico: () => WX.storm, test: (d) => (d.code >= 95 ? 1 : 0), t: ['Có dông sét', 'Có dông sét'], v: () => '',
+      a: 'Không trú dưới cây cao, cột điện; tránh nơi đất trống.' },
+    { k: 'cold', ico: () => TIP_ICON.temp, test: (d) => (avgT(d) == null ? 0 : avgT(d) <= 13 ? 2 : avgT(d) <= 15 ? 1 : 0), t: ['Rét đậm', 'Rét hại'],
+      v: (ds) => `thấp nhất ${rnd(Math.min(...ds.map((d) => d.lo)))}°`, a: 'Giữ ấm cổ, ngực, chân; không sưởi than trong phòng kín.' },
+    { k: 'uv', ico: () => WX.sun, test: (d) => (d.uv >= 11 ? 2 : d.uv >= 8 ? 1 : 0), t: ['Tia UV rất cao', 'Tia UV cực độ'],
+      v: (ds) => `UV ${rnd(Math.max(...ds.map((d) => d.uv)))}`, a: 'Kem chống nắng, mũ rộng vành, kính râm, áo chống nắng.' },
+    { k: 'fog', ico: () => WX.fog, test: (d) => (d.code === 45 || d.code === 48 ? 1 : 0), t: ['Sương mù', 'Sương mù'], v: () => '',
+      a: 'Bật đèn xe, giảm tốc độ, giữ khoảng cách.' },
+  ];
+  const wxDayLevel = (d) => Math.max(0, ...WX_RULES.map((r) => r.test(d)));
+  function wxWear(d) {
+    const hi = feelHi(d), lo = feelLo(d);
+    if (hi == null) return 'Chưa đủ số liệu nhiệt độ.';
+    let s = hi >= 35 ? 'Áo cộc tay mỏng sáng màu, mũ, kem chống nắng'
+      : hi >= 29 ? 'Áo thun, sơ mi mỏng thoáng mát'
+      : hi >= 23 ? 'Áo thun hoặc sơ mi dài tay mỏng'
+      : hi >= 17 ? 'Áo khoác mỏng hoặc áo nỉ, quần dài'
+      : hi >= 11 ? 'Áo len và áo khoác dày, giày kín'
+      : 'Nhiều lớp: áo giữ nhiệt, áo phao, khăn, găng tay';
+    if (d.pop >= 50 || d.rain >= 2) s += ' · mang ô hoặc áo mưa';
+    if (lo != null && hi - lo >= 7 && lo < 22) s += ` · sáng tối ${rnd(lo)}°, thêm áo khoác`;
+    return s + '.';
+  }
+  // Lưu ý: tối đa 3 dòng. Luôn có "mặc gì" (hôm nay; sau 19h là ngày mai) + tối đa 2 điều quan trọng nhất trong:
+  //   - hiện tượng cực đoan hôm nay / ngày mai (mọi mức),
+  //   - những ngày sau trong tuần: chỉ hiện tượng nguy hiểm (mức đỏ) hoặc nhiệt độ đổi đột ngột so với hôm trước.
+  function wxTips(D) {
+    const name = (i) => wxDayName(D, i, true), cand = [];
+    for (const r of WX_RULES) {
+      const near = [0, 1].filter((i) => D[i] && r.test(D[i]));
+      if (near.length) {
+        const lv = Math.max(...near.map((i) => r.test(D[i]))), v = r.v(near.map((i) => D[i]));
+        cand.push({ lv, pri: lv * 10 + 4, ico: r.ico(), title: `${r.t[lv - 1]} ${near.map(name).join(' và ')}${v ? ' · ' + v : ''}`, text: r.a });
+        continue;
+      }
+      const far = D.map((d, i) => (i >= 2 && r.test(d) === 2 ? i : -1)).filter((i) => i >= 0);
+      if (far.length) cand.push({ lv: 2, pri: 18, ico: r.ico(), title: `${r.t[1]} ${name(far[0])}${far.length > 1 ? ' và các ngày sau' : ''} · ${r.v(far.map((i) => D[i]))}`.replace(/ · $/, ''), text: r.a });
+    }
+    // Nhiệt độ trung bình đổi từ 5° trở lên so với hôm trước: lấy ngày đổi mạnh nhất
+    let jump = null;
+    for (let i = 1; i < D.length; i++) {
+      const a = avgT(D[i - 1]), b = avgT(D[i]);
+      if (a == null || b == null) continue;
+      const dt = b - a;
+      if (Math.abs(dt) >= 5 && (!jump || Math.abs(dt) > Math.abs(jump.dt))) jump = { i, dt };
+    }
+    if (jump) {
+      const d = D[jump.i], lv = Math.abs(jump.dt) >= 8 ? 2 : 1, down = jump.dt < 0;
+      cand.push({ lv, pri: lv * 10 + 2, ico: TIP_ICON.temp,
+        title: `${down ? 'Trời chuyển lạnh' : 'Nóng lên đột ngột'} ${name(jump.i)} · ${down ? 'giảm' : 'tăng'} ${rnd(Math.abs(jump.dt))}°`,
+        text: `Nhiệt độ ${rnd(d.lo)}–${rnd(d.hi)}°. ${down ? 'Chuẩn bị áo ấm, giữ ấm khi ra ngoài.' : 'Mặc thoáng, uống đủ nước.'}` });
+    }
+    cand.sort((x, y) => y.pri - x.pri);
+    const top = cand.slice(0, 2);
+    const wi = new Date().getHours() >= 19 && D[1] ? 1 : 0;
+    const wear = { lv: 'wear', ico: TIP_ICON.wear, title: `Mặc gì ${name(wi)}`, text: wxWear(D[wi]) };
+    if (!top.length) return [wear, { lv: 'ok', ico: TIP_ICON.ok, title: 'Tuần này thời tiết ổn định', text: 'Không có nắng nóng, mưa to, gió mạnh hay rét đậm.' }];
+    // Cảnh báo đỏ lên đầu, rồi mặc gì, rồi cảnh báo cam
+    return [...top.filter((t) => t.lv === 2), wear, ...top.filter((t) => t.lv !== 2)];
+  }
+
+  function renderWeather() {
+    const wrap = $('#wxWrap');
+    if (!wrap) return;
+    const w = S.weather, D = w && Array.isArray(w.daily) ? w.daily.slice(0, 7) : [];
+    if (!w || !D.length) {
+      wrap.innerHTML = `<div class="empty wx-empty">${WX.cloud}<b>Chưa có dữ liệu thời tiết</b><span>Cần kết nối mạng. Nếu đã tắt, bật lại "Hiện thời tiết" trong menu chuột phải.</span></div>`;
+    } else {
+      const meta = [w.feels != null ? `Cảm giác ${rnd(w.feels)}°` : '', w.hum != null ? `Ẩm ${rnd(w.hum)}%` : '', w.wind != null ? `Gió ${rnd(w.wind)} km/h` : ''].filter(Boolean).join(' · ');
+      const now = `
+        <div class="wx-now">
+          <span class="wx-ic wxa">${wxIcon(w.code, w.day)}</span>
+          <b class="wx-t">${rnd(w.temp)}°</b>
+          <div class="wx-cd"><b>${WX_NAME(w.code)}</b><span>Cao ${rnd(w.hi)}° · Thấp ${rnd(w.lo)}°</span><span>${meta}</span></div>
+          <div class="wx-loc"><b>${esc(w.city || 'Vị trí của bạn')}</b><span>Cập nhật ${fmtClock(new Date(w.at))}</span></div>
+        </div>`;
+      const tips = wxTips(D).map((t) => `
+        <div class="wx-tip lv-${t.lv}" title="${esc(t.title + '\n' + t.text)}"><span class="ti">${t.ico}</span>
+          <div class="tx"><b>${esc(t.title)}</b><span>${esc(t.text)}</span></div></div>`);
+      const week = D.map((d, i) => {
+        const lv = wxDayLevel(d);
+        const tip = [WX_NAME(d.code), `${rnd(d.lo)}–${rnd(d.hi)}°C`, d.pop != null ? `Khả năng mưa ${rnd(d.pop)}%` : '', d.rain ? `Lượng mưa ${d.rain.toFixed(1)} mm` : '', d.gust != null ? `Gió giật ${rnd(d.gust)} km/h` : '', d.uv != null ? `UV ${rnd(d.uv)}` : ''].filter(Boolean).join('\n');
+        return `<div class="wx-d wxa ${i === 0 ? 'today' : ''} ${lv ? 'lv' + lv : ''}" title="${esc(tip)}">
+          <span>${wxDayName(D, i)}</span>${wxIcon(d.code, true)}
+          <b>${rnd(d.hi)}°</b><small>${rnd(d.lo)}°</small>
+          <em class="${d.pop >= 20 ? '' : 'none'}">${rnd(d.pop)}%</em></div>`;
+      }).join('');
+      // Lưu ý đầu tiên (quan trọng nhất) luôn hiện; các lưu ý còn lại nằm trong .wx-more, mở ra khi phóng to
+      const tl = tips;
+      const btn = `<button class="cal-exp" data-act="wx-exp" id="wxExp" title="${S.wxOpen ? 'Thu gọn' : 'Xem đầy đủ'}">${S.wxOpen ? ICON.collapse : ICON.expand}</button>`;
+      wrap.innerHTML = `${now}<div class="wx-tips">${tl[0] || ''}<div class="wx-more"><div>${tl.slice(1).join('')}</div></div></div>`
+        + `<div class="wx-sec"><span>Dự báo 7 ngày</span>${btn}</div><div class="wx-week">${week}</div>`;
+    }
+    // Đo cả hai chế độ (tắt chuyển động trong lúc đo), rồi trả về chế độ đang chọn
+    wrap.classList.add('nt');
+    wrap.classList.add('full'); wxHs.full = wrap.offsetHeight;
+    wrap.classList.remove('full'); wxHs.compact = wrap.offsetHeight;
+    wrap.classList.toggle('full', S.wxOpen);
+    void wrap.offsetHeight;
+    wrap.classList.remove('nt');
+    wxH = S.wxOpen ? wxHs.full : wxHs.compact;
+    applyLayout();
+  }
+  // Thu gọn / phóng to: chỉ đổi class, CSS lo phần chuyển động; viên thuốc co giãn theo chiều cao đã đo sẵn
+  function toggleWx() {
+    S.wxOpen = !S.wxOpen; store.set('wxOpen', S.wxOpen);
+    const wrap = $('#wxWrap'), b = $('#wxExp');
+    wrap.classList.toggle('full', S.wxOpen);
+    if (b) { b.innerHTML = S.wxOpen ? ICON.collapse : ICON.expand; b.title = S.wxOpen ? 'Thu gọn' : 'Xem đầy đủ'; }
+    wxH = S.wxOpen ? wxHs.full : wxHs.compact;
+    applyLayout();
+  }
+  api.onWeather((w) => { S.weather = w || null; compactSig = ''; renderCompact(); renderWeather(); applyLayout(); });
+  api.weatherGet();
 
   /* ================= Thu gọn ================= */
   let compactSig = '';
   function renderCompact() {
     const now = new Date();
-    const music = compactMusic(), tRun = S.timer.running, extras = music || tRun;
+    const music = compactMusic(), extras = music;
     island.classList.toggle('playing', isPlaying()); // dùng cho vệt sáng khi ẩn
     compactEl.classList.toggle('extras', extras);
     compactEl.classList.toggle('music', music);
@@ -491,25 +615,22 @@
       }
       return;
     }
-    const sig = [music, tRun, music ? (S.media.thumb || '').length : 0, isPlaying(), music ? S.media.title + S.media.artist : '', !!S.media.override].join('|');
+    const sig = [music, music ? (S.media.thumb || '').length : 0, isPlaying(), music ? S.media.title + S.media.artist : '', !!S.media.override].join('|');
     if (sig !== compactSig) {
       compactSig = sig;
-      cl.innerHTML = music ? '<div class="c-art" id="cArt"></div>' : `<span class="c-ico">${ICON.hourglass}</span>`;
-      if (music) {
+      cl.innerHTML = '<div class="c-art" id="cArt"></div>';
+      {
         const item = `<span class="mq-i"><b>${esc(S.media.title)}</b>${S.media.artist ? `<em>${esc(S.media.artist)}</em>` : ''}</span>`;
         cc.innerHTML = `<div class="c-mid"><div class="mq">${item}${item}</div></div>`;
         const mid = $('.c-mid', cc);
         mqFit(mid);
-      } else cc.innerHTML = '';
+      }
       // Bên phải: sóng âm (thu gọn) và nút phát/tạm dừng (khi rê chuột) chồng lên nhau, đổi qua lại bằng CSS
-      cr.innerHTML = tRun ? '<span class="c-timer" id="cTimer"></span>'
-        : `<canvas class="c-wave ${isPlaying() ? '' : 'idle'}" id="cWave"></canvas>`
+      cr.innerHTML = `<canvas class="c-wave ${isPlaying() ? '' : 'idle'}" id="cWave"></canvas>`
           + `<button class="c-pp ${S.media.override ? 'locked' : ''}" data-act="m-play" aria-label="Phát/Tạm dừng">${isPlaying() ? ICON.pause : ICON.play}</button>`;
       waveCanvas('c', $('#cWave'));
-      if (music) { const a = $('#cArt'); if (S.media.thumb) a.style.backgroundImage = `url("${S.media.thumb}")`; else a.innerHTML = ICON.music; }
+      { const a = $('#cArt'); if (S.media.thumb) a.style.backgroundImage = `url("${S.media.thumb}")`; else a.innerHTML = ICON.music; }
     }
-    const t = $('#cTimer');
-    if (t) t.textContent = fmtTimer(Math.ceil(timerRemaining()));
     syncWave();
   }
 
@@ -529,6 +650,9 @@
     const pad = Math.max(MQ_GAP, MQ_MIN - textW);
     items.forEach((it) => { it.style.paddingRight = pad + 'px'; });
     mq.style.setProperty('--dur', Math.max(6, (textW + pad) / MQ_SPEED).toFixed(1) + 's');
+    // Dịch đúng từng 1px (steps) thay vì tính lại mỗi lần màn hình quét: màn 200 Hz trước đây phải ghép cửa sổ
+    // 200 lần/giây chỉ để chữ nhích chưa tới 1px; giờ ~32 lần/giây, chữ vẫn trôi đều và sắc nét hơn.
+    mq.style.setProperty('--steps', Math.max(1, Math.round(textW + pad)));
   }
 
   /* ----- Sóng âm thật: phân tích phổ âm thanh hệ thống (loopback) thành 4 dải tần ----- */
@@ -567,9 +691,9 @@
     if (want) {
       clearTimeout(wave.stopTimer); wave.stopTimer = 0;
       if (!wave.ctx || wave.ctx.state !== 'running') { waveStart(); return; }
-      if (!wave.raf) { wave.last = 0; wave.raf = requestAnimationFrame(waveFrame); }
+      if (!wave.raf) { wave.last = 0; wave.raf = setInterval(waveFrame, WAVE_FRAME_MS); }
     } else {
-      if (wave.raf) { cancelAnimationFrame(wave.raf); wave.raf = 0; }
+      if (wave.raf) { clearInterval(wave.raf); wave.raf = 0; }
       wave.lvl = [0, 0, 0, 0];
       Object.values(wave.slots).forEach((s) => waveDraw(s, [4, 4, 4, 4]));
       // Ngừng vẽ ngay; nhả hẳn luồng nếu không cần trong 30 giây. Không dùng ctx.suspend(): sau khi
@@ -577,9 +701,13 @@
       if (wave.stream && !wave.stopTimer) wave.stopTimer = setTimeout(() => { wave.stopTimer = 0; if (!waveWanted()) waveRelease(); }, 30000);
     }
   }
-  function waveFrame(ts) {
-    wave.raf = requestAnimationFrame(waveFrame);
-    const dt = wave.last ? Math.min(ts - wave.last, 100) : 16;
+  // Vẽ ~30 lần/giây bằng hẹn giờ, KHÔNG dùng requestAnimationFrame: rAF chạy theo tần số quét (màn 200 Hz =
+  // 200 lần/giây) và mỗi lần gọi đã bắt cả cửa sổ trong suốt chạy một nhịp vẽ, kể cả khi không vẽ gì.
+  // 4 thanh nhỏ ở 30 lần/giây trông vẫn mượt (đã làm mượt theo thời gian).
+  const WAVE_FRAME_MS = 1000 / 30;
+  function waveFrame() {
+    const ts = performance.now();
+    const dt = wave.last ? Math.min(ts - wave.last, 100) : 33;
     wave.last = ts;
     const an = wave.an, d = wave.data;
     if (!an) return;
@@ -938,44 +1066,6 @@
     renderCalendar();
   }
 
-  /* ================= Báo thức ================= */
-  const saveAlarms = () => store.set('alarms', S.alarms);
-  function repeatText(days) {
-    const set = new Set(days);
-    if (!set.size) return 'Một lần';
-    if (set.size === 7) return 'Hằng ngày';
-    if (set.size === 5 && [1, 2, 3, 4, 5].every((d) => set.has(d))) return 'Các ngày trong tuần';
-    if (set.size === 2 && set.has(0) && set.has(6)) return 'Cuối tuần';
-    return MON_FIRST.filter((d) => set.has(d)).map((d) => WD_SHORT[d]).join(' ');
-  }
-  function renderAlarms() {
-    const list = $('#alarmList');
-    const sorted = [...S.alarms].sort((a, b) => a.h * 60 + a.m - (b.h * 60 + b.m));
-    list.innerHTML = !sorted.length ? `<div class="list-empty">${ICON.alarm}<span>Chưa có báo thức nào</span></div>` : sorted.map((a) => `
-      <div class="a-row ${a.on ? '' : 'off'}" data-act="a-edit" data-id="${a.id}">
-        <div><div class="a-time">${pad(a.h)}:${pad(a.m)}</div><div class="a-sub">${repeatText(a.days)}</div></div>
-        <div class="sw ${a.on ? 'on' : ''}" data-act="a-toggle" data-id="${a.id}"></div>
-      </div>`).join('');
-    renderEditor();
-  }
-  function renderEditor() {
-    const el = $('#alarmEditor'), e = S.editor;
-    el.classList.toggle('on', !!e);
-    if (!e) return;
-    el.innerHTML = `
-      <div class="pick">
-        <div class="col" data-col="h"><button data-rep data-act="e-h+">${ICON.up}</button><div class="v">${pad(e.h)}</div><button data-rep data-act="e-h-">${ICON.down}</button></div>
-        <div class="colon">:</div>
-        <div class="col" data-col="m"><button data-rep data-act="e-m+">${ICON.up}</button><div class="v">${pad(e.m)}</div><button data-rep data-act="e-m-">${ICON.down}</button></div>
-      </div>
-      <div class="days">${MON_FIRST.map((d) => `<button class="day ${e.days.includes(d) ? 'on' : ''}" data-act="e-day" data-d="${d}">${WD_SHORT[d]}</button>`).join('')}</div>
-      <div class="e-actions">
-        ${e.id ? '<button class="pbtn danger" data-act="e-del">Xóa</button>' : '<span></span>'}
-        <div class="right"><button class="pbtn gray" data-act="e-cancel">Hủy</button><button class="pbtn accent" data-act="e-save">Lưu</button></div>
-      </div>`;
-  }
-  const wrap = (v, max) => ((v % max) + max) % max;
-
   /* ================= Bảng tạm ================= */
   api.onClip((list) => { S.clip = Array.isArray(list) ? list : []; renderClip(); });
   const clipType = (t) => { const s = t.trim(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? 'mail' : /^(https?:\/\/|www\.)\S+$/i.test(s) ? 'link' : 'text'; };
@@ -983,15 +1073,19 @@
     const q = S.clipQ.trim().toLowerCase();
     const items = S.clip.filter((x) => !q || x.text.toLowerCase().includes(q));
     const short = (t) => esc(t.replace(/\s+/g, ' ').trim().slice(0, 160));
-    $('#clipPins').innerHTML = items.filter((x) => x.pin).slice(0, 6).map((x) => `<button class="pin-chip" data-act="clip-paste" data-id="${x.id}"><span>${short(x.text)}</span></button>`).join('');
+    $('#clipPins').innerHTML = items.filter((x) => x.pin).slice(0, 6).map((x) => `<button class="pin-chip" data-act="clip-copy" data-id="${x.id}"><span>${short(x.text)}</span></button>`).join('');
     const list = $('#clipList');
-    if (!items.length) { list.innerHTML = `<div class="clip-empty">${q ? 'Không có kết quả' : 'Chưa có gì. Hãy sao chép một đoạn văn bản bất kỳ.'}</div>`; return; }
+    if (!items.length) list.innerHTML = `<div class="clip-empty">${q ? 'Không có kết quả' : 'Chưa có gì. Hãy sao chép một đoạn văn bản bất kỳ.'}</div>`;
+    else {
     const tyIcon = { mail: ICON.mail, link: ICON.link, text: ICON.note };
     list.innerHTML = items.map((x) => { const ty = clipType(x.text); return `
-      <div class="c-item" data-act="clip-paste" data-id="${x.id}">
+      <div class="c-item" data-act="clip-copy" data-id="${x.id}">
         <span class="ty ${ty}">${tyIcon[ty]}</span><span class="tx">${short(x.text)}</span>
         <span class="acts"><button class="${x.pin ? 'on' : ''}" data-act="clip-pin" data-id="${x.id}" title="Ghim">${x.pin ? ICON.bookmarkF : ICON.bookmark}</button><button data-act="clip-del" data-id="${x.id}" title="Xóa">${ICON.x}</button></span>
       </div>`; }).join('');
+    }
+    const h = list.offsetTop + list.offsetHeight;
+    if (h > 0 && h !== clipH) { clipH = h; applyLayout(); }
   }
 
   /* ================= Kệ tạm (kéo thả tệp) ================= */
@@ -999,16 +1093,25 @@
   function renderShelf() {
     const el = $('#shelfList');
     if (!el) return;
+    const fmtSize = (b) => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
+    const total = S.shelf.reduce((a, x) => a + (x.size || 0), 0);
+    $('#shelfMeta').textContent = S.shelf.length ? `${S.shelf.length} · ${fmtSize(total)}` : '';
+    const exp = $('#shelfExp');
+    exp.style.display = S.shelf.length > 3 ? '' : 'none'; // ít tệp thì một hàng là đủ
+    exp.innerHTML = S.shelfOpen ? ICON.collapse : ICON.expand;
+    exp.title = S.shelfOpen ? 'Thu gọn thành một hàng' : 'Mở rộng thành lưới';
+    el.classList.toggle('grid', S.shelfOpen && S.shelf.length > 3);
     if (!S.shelf.length) {
       el.innerHTML = `<div class="shelf-drop">${ICON.shelf}<b>Kéo tệp vào đây để giữ tạm</b><span>Cần dùng thì kéo từ đây thả sang ứng dụng khác. Kệ chỉ nhớ đường dẫn, không sao chép hay xóa tệp thật.</span></div>`;
       return;
     }
     el.innerHTML = S.shelf.map((x) => `
-      <div class="sh-item" draggable="true" data-act="shelf-open" data-id="${esc(x.id)}" title="${esc(x.name)}&#10;${esc(x.dir)}">
-        ${x.icon ? `<img src="${esc(x.icon)}" alt="" />` : `<span class="fi">${ICON.file}</span>`}
-        <span class="nm">${esc(x.name)}</span>
+      <div class="sh-item ${x.thumb ? 'has-th' : ''}" draggable="true" data-act="shelf-open" data-id="${esc(x.id)}" title="${esc(x.name)}&#10;${esc(x.dir)}">
+        ${x.thumb ? `<img class="th" src="${esc(x.thumb)}" alt="" />` : x.icon ? `<img src="${esc(x.icon)}" alt="" />` : `<span class="fi">${ICON.file}</span>`}
+        ${x.thumb ? '' : `<span class="nm">${esc(x.name)}</span>`}
         <button class="rm" data-act="shelf-del" data-id="${esc(x.id)}" aria-label="Bỏ khỏi kệ">${ICON.x}</button>
       </div>`).join('');
+    el.scrollLeft = 0; updateChipFade(el);
   }
   const hasFiles = (ev) => !!(ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files'));
   let dragDepth = 0;
@@ -1018,7 +1121,7 @@
     ev.preventDefault();
     dragDepth++;
     document.body.classList.add('dropping');
-    if (S.tab !== 'shelf') setTab('shelf', true);
+    if (S.tab !== 'shelf') setTab('shelf');
   });
   document.addEventListener('dragover', (ev) => { if (!hasFiles(ev)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
   document.addEventListener('dragleave', (ev) => { if (!hasFiles(ev)) return; if (--dragDepth <= 0) endDropUi(); });
@@ -1039,11 +1142,12 @@
 
   /* ================= Thông báo ngắn (sạc, pin yếu, tải xong, tai nghe) ================= */
   let noticeTimer = null;
-  const NOTICE_ICON = { charge: [ICON.bolt, '#30d158'], low: [ICON.battery, '#ff453a'], download: [ICON.download, '#0a84ff'], device: [ICON.headphones, '#ffffff'] };
+  const NOTICE_ICON = { charge: [ICON.bolt, '#30d158'], low: [ICON.battery, '#ff453a'], download: [ICON.download, '#0a84ff'], device: [ICON.headphones, '#ffffff'], shot: [ICON.shelf, '#bf5af2'], update: [ICON.download, '#30d158'] };
   function showNotice(n) {
     if (!n || S.ring) return;
     const [ic, col] = NOTICE_ICON[n.kind] || NOTICE_ICON.device;
-    $('#nIcon').innerHTML = ic;
+    // Ảnh chụp màn hình: hiện luôn ảnh thu nhỏ thay cho biểu tượng
+    $('#nIcon').innerHTML = n.thumb && /^data:image\//.test(n.thumb) ? `<img src="${esc(n.thumb)}" alt="" />` : ic;
     $('#nIcon').style.setProperty('--nc', col);
     $('#nTitle').textContent = n.title || '';
     $('#nSub').textContent = n.sub || '';
@@ -1087,70 +1191,6 @@
     knownDevs = ids;
   }
 
-  /* ================= Điều khiển: hẹn giờ, bấm giờ, công tắc ================= */
-  function timerRemaining() { return S.timer.running ? Math.max(0, (S.timer.endTs - Date.now()) / 1000) : S.timer.remaining; }
-  function buildRuler() {
-    let h = '';
-    for (let m = 0; m <= 180; m += 5) h += m % 10 === 0 ? `<span style="left:${m * PX_MIN}px">${m}</span>` : `<u style="left:${m * PX_MIN}px"></u>`;
-    $('#ticks').innerHTML = h;
-  }
-  function renderRuler() {
-    const rw = $('#ruler').clientWidth || 424;
-    const mins = S.timer.running ? timerRemaining() / 60 : S.timer.total / 60;
-    $('#ticks').style.transform = `translateX(${(rw * 0.36 - mins * PX_MIN).toFixed(1)}px)`;
-  }
-  function renderIcRow() {
-    const items = [
-      ['ct-timer', ICON.hourglass, 'Hẹn giờ', S.ctPanel === 'timer'],
-      ['ct-sw', ICON.stopwatch, 'Bấm giờ', S.ctPanel === 'sw'],
-      ['ct-dnd', ICON.moon, 'Không làm phiền (tắt thông báo)', S.flags.dnd],
-      ['ct-awake', ICON.coffee, 'Giữ máy luôn thức', S.flags.awake],
-    ];
-    $('#icRow').innerHTML = items.map(([a, ic, t, on]) => `<button class="ib ${on ? 'on' : ''}" data-act="${a}" title="${t}">${ic}</button>`).join('');
-    $('.ct-timer').classList.toggle('on', S.ctPanel === 'timer');
-    $('.ct-sw').classList.toggle('on', S.ctPanel === 'sw');
-  }
-  function renderTimer() {
-    const T = S.timer, rem = timerRemaining();
-    $('#tTime').textContent = fmtTimer(Math.ceil(rem));
-    const btn = $('#tToggle');
-    const label = T.running ? 'Tạm dừng' : (rem < T.total && rem > 0 ? 'Tiếp tục' : 'Bắt đầu');
-    if (btn.textContent !== label) btn.textContent = label;
-    $('#tReset').style.visibility = (T.running || rem < T.total) ? 'visible' : 'hidden';
-    renderRuler();
-  }
-  function timerAdjust(deltaSec) {
-    const T = S.timer, rem = timerRemaining();
-    if (deltaSec < 0 && rem + deltaSec < 60) return;
-    if (T.total + deltaSec > 180 * 60) return;
-    T.total += deltaSec;
-    if (T.running) T.endTs += deltaSec * 1000; else T.remaining = Math.min(T.total, rem + deltaSec);
-    store.set('ttotal', T.total);
-    renderTimer(); renderCompact();
-  }
-  function swElapsed() { return S.sw.running ? S.sw.base + (performance.now() - S.sw.start) : S.sw.base; }
-  function renderSW() {
-    const el = swElapsed();
-    $('#swTime').textContent = fmtSW(el);
-    const tg = $('#swToggle'), lp = $('#swLapBtn');
-    const lbl = S.sw.running ? 'Dừng' : 'Bắt đầu';
-    if (tg.textContent !== lbl) { tg.textContent = lbl; tg.className = 'pill ' + (S.sw.running ? 'gray' : 'orange'); }
-    const lbl2 = S.sw.running ? 'Vòng' : 'Đặt lại';
-    if (lp.textContent !== lbl2) lp.textContent = lbl2;
-    lp.disabled = !S.sw.running && el === 0;
-  }
-  function renderLaps() {
-    const laps = S.sw.laps;
-    $('#swLaps').innerHTML = laps.slice(-3).reverse().map((t, i) => { const n = laps.length - i, prev = laps[n - 2] || 0; return `<div><span>Vòng ${n}</span><span>${fmtSW(t - prev)}</span></div>`; }).join('');
-  }
-  function applyFlags(f) {
-    if (!f) return;
-    S.flags = Object.assign(S.flags, f);
-    renderIcRow(); applyLayout();
-  }
-  api.onFlags(applyFlags);
-  Promise.resolve(api.flags()).then(applyFlags).catch(() => {});
-
   /* ================= Chuông báo ================= */
   let audioCtx = null, soundIv = null, ringTimeout = null;
   function beepBurst() {
@@ -1178,12 +1218,7 @@
     S.ring = r;
     $('#ringTitle').textContent = r.title;
     $('#ringSub').textContent = r.sub || '';
-    $('#ringIcon').innerHTML = r.kind === 'timer' ? ICON.hourglass : ICON.bell;
-    const sn = $('#ringSnooze');
-    sn.style.display = (r.kind === 'alarm' || r.kind === 'timer') ? '' : 'none';
-    sn.textContent = r.kind === 'timer' ? '+5 phút' : 'Báo lại 5 phút';
-    $('#ringRestart').style.display = r.kind === 'timer' ? '' : 'none';
-    $('#ringStop').textContent = r.kind === 'note' ? 'Xong' : 'Tắt';
+    $('#ringIcon').innerHTML = ICON.bell;
     clearTimeout(ringTimeout);
     ringTimeout = setTimeout(() => stopRing(), 60000);
     api.alert(true);
@@ -1198,51 +1233,38 @@
     applyLayout();
   }
 
-  /* ================= Kiểm tra báo thức / ghi chú (có bù khi máy ngủ dậy) ================= */
+  /* ================= Nhắc ghi chú theo giờ (có bù khi máy ngủ dậy) ================= */
   let lastTick = Date.now();
-  function checkAlarms() {
+  function checkNotes() {
     const now = Date.now();
     let from = Math.floor(lastTick / 60000) + 1;
     const to = Math.floor(now / 60000);
     if (to - from > 15) from = to - 15;
     for (let mn = from; mn <= to; mn++) {
       const d = new Date(mn * 60000), hhmm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      for (const a of S.alarms) {
-        if (a.on && a.h === d.getHours() && a.m === d.getMinutes() && (!a.days.length || a.days.includes(d.getDay()))) {
-          if (!a.days.length) { a.on = false; saveAlarms(); renderAlarms(); }
-          startRing({ kind: 'alarm', title: 'Báo thức', sub: hhmm });
-        }
-      }
       for (const n of S.notes[ymd(d)] || []) if (n.at === hhmm) startRing({ kind: 'note', title: n.t, sub: 'Ghi chú · ' + hhmm });
     }
-    S.snoozes = S.snoozes.filter((sn) => { if (sn.ts <= now) { startRing({ kind: 'alarm', title: 'Báo thức (báo lại)', sub: fmtClock(new Date()) }); return false; } return true; });
     lastTick = now;
   }
 
   /* ================= Vòng lặp chính ================= */
   let lastSec = -1;
   function tick() {
-    const now = new Date(), T = S.timer;
-    if (T.running && timerRemaining() <= 0) {
-      T.running = false; T.remaining = 0;
-      startRing({ kind: 'timer', title: 'Hết giờ', sub: fmtTimer(T.total) });
-      renderTimer(); applyLayout();
-    }
-    if (S.tab === 'ctrl') { if (S.ctPanel === 'timer') { if (T.running) renderTimer(); } else renderSW(); }
+    const now = new Date();
     if (S.tab === 'music' && !(S.drag && S.drag.k === 'seek')) updateProgress();
     if (now.getSeconds() !== lastSec) {
       lastSec = now.getSeconds();
-      checkAlarms(); renderCompact(); renderTopDate();
+      checkNotes(); renderCompact(); renderTopDate();
       if (S.hover || S.peek) requestSys();
       if (Date.now() - devPoll > 8000) { devPoll = Date.now(); api.sys('devices'); }
       applyLayout();
     }
   }
   function renderAll() {
-    renderMusic(); renderCalendar(); renderAlarms(); renderClip(); renderShelf(); renderIcRow(); renderTimer(); renderSW(); renderLaps(); renderCompact(); renderVol(); renderBri();
+    renderMusic(); renderCalendar(); renderWeather(); renderClip(); renderShelf(); renderCompact(); renderVol();
   }
 
-  /* ================= Kéo thả (tua nhạc, thanh trượt, thước hẹn giờ...) ================= */
+  /* ================= Kéo thả (tua nhạc, âm lượng) ================= */
   let drag = null;
   const frac = (el, ev) => { const r = el.getBoundingClientRect(); return clamp((ev.clientX - r.left) / r.width, 0, 1); };
   function beginDrag(d, ev) {
@@ -1254,16 +1276,7 @@
   function moveDrag(ev) {
     const d = drag; if (!d) return;
     if (d.k === 'seek') { d.sec = frac(d.el, ev) * S.media.dur; updateProgress(); }
-    else if (d.k === 'sl') {
-      const f = frac(d.el, ev);
-      if (d.el.id === 'slVol') setVol(f);
-      else if (d.el.id === 'slBri') setBri(f);
-    } else if (d.k === 'vol2') setVol(frac(d.el, ev));
-    else if (d.k === 'ruler') {
-      if (S.timer.running) return;
-      const mins = clamp(Math.round(d.min0 - (ev.clientX - d.x0) / PX_MIN), 1, 180);
-      if (mins * 60 !== S.timer.total) { S.timer.total = S.timer.remaining = mins * 60; store.set('ttotal', S.timer.total); renderTimer(); }
-    }
+    else if (d.k === 'vol2') setVol(frac(d.el, ev));
   }
   function endDrag() {
     const d = drag; if (!d) return;
@@ -1273,7 +1286,7 @@
       const sec = d.sec == null ? curPos() : d.sec;
       S.media.pos = sec; S.media.base = Date.now(); S.media.seekAt = Date.now();
       api.media('seek:' + sec.toFixed(1));
-    } else if (d.k === 'sl' && d.el.id === 'slBri') api.sys('bri:' + Math.max(1, S.sys.bri));
+    }
     if (!S.hoverRaw) collapseSoon(500);
   }
   document.addEventListener('pointerdown', (ev) => {
@@ -1281,16 +1294,14 @@
     const t = ev.target;
     let el;
     if ((el = t.closest('#mBar'))) { if (hasMusic() && S.media.dur > 0 && !S.media.override) beginDrag({ k: 'seek', el, sec: null }, ev); return; }
-    if ((el = t.closest('.sl'))) { beginDrag({ k: 'sl', el }, ev); return; }
     if ((el = t.closest('.bar[data-vol]'))) { beginDrag({ k: 'vol2', el }, ev); return; }
-    if ((el = t.closest('#ruler'))) { beginDrag({ k: 'ruler', el, x0: ev.clientX, min0: S.timer.total / 60 }, ev); return; }
   });
   document.addEventListener('pointermove', (ev) => { if (drag) moveDrag(ev); });
   ['pointerup', 'pointercancel'].forEach((e) => document.addEventListener(e, endDrag));
 
   /* ================= Sự kiện bấm ================= */
   function act(a, el) {
-    const T = S.timer, m = S.media;
+    const m = S.media;
     switch (a) {
       // Nhạc
       case 'm-play': if (m.override) break; if (m.status === 'Playing') lastPlayingAt = Date.now(); m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
@@ -1324,103 +1335,42 @@
       case 'cal-pick': { const d = new Date(Number(el.dataset.ts)); S.sel = new Date(d.getFullYear(), d.getMonth(), d.getDate()); renderCalendar(); break; }
       case 'note-add': addNote(); break;
       case 'note-del': { const k = ymd(S.sel); S.notes[k] = (S.notes[k] || []).filter((x) => x.id !== el.dataset.id); if (!S.notes[k].length) delete S.notes[k]; saveNotes(); renderCalendar(); break; }
-      // Báo thức
-      case 'alarm-add': S.editor = { id: null, h: 7, m: 0, days: [] }; renderEditor(); break;
-      case 'a-edit': { const a2 = S.alarms.find((x) => x.id === el.dataset.id); if (a2) { S.editor = { id: a2.id, h: a2.h, m: a2.m, days: [...a2.days] }; renderEditor(); } break; }
-      case 'a-toggle': { const a2 = S.alarms.find((x) => x.id === el.dataset.id); if (a2) { a2.on = !a2.on; saveAlarms(); renderAlarms(); } break; }
-      case 'e-h+': S.editor.h = wrap(S.editor.h + 1, 24); renderEditor(); break;
-      case 'e-h-': S.editor.h = wrap(S.editor.h - 1, 24); renderEditor(); break;
-      case 'e-m+': S.editor.m = wrap(S.editor.m + 1, 60); renderEditor(); break;
-      case 'e-m-': S.editor.m = wrap(S.editor.m - 1, 60); renderEditor(); break;
-      case 'e-day': { const d = Number(el.dataset.d), i = S.editor.days.indexOf(d); if (i >= 0) S.editor.days.splice(i, 1); else S.editor.days.push(d); renderEditor(); break; }
-      case 'e-cancel': S.editor = null; renderEditor(); break;
-      case 'e-del': S.alarms = S.alarms.filter((x) => x.id !== S.editor.id); S.editor = null; saveAlarms(); renderAlarms(); break;
-      case 'e-save': {
-        const e = S.editor;
-        if (e.id) { const a2 = S.alarms.find((x) => x.id === e.id); if (a2) Object.assign(a2, { h: e.h, m: e.m, days: [...e.days], on: true }); }
-        else S.alarms.push({ id: 'a' + Date.now().toString(36), h: e.h, m: e.m, days: [...e.days], on: true });
-        S.editor = null; saveAlarms(); renderAlarms(); break;
-      }
       // Kệ tạm
       case 'shelf-open': api.shelfOpen(el.dataset.id); break;
       case 'shelf-del': api.shelfDel(el.dataset.id); break;
       case 'shelf-clear': api.shelfClear(); break;
       // Bảng tạm
-      case 'clip-paste': api.clipPaste(el.dataset.id); break;
+      case 'clip-copy': {
+        api.clipCopy(el.dataset.id);
+        // Phát sáng báo đã chép (chạy lại hiệu ứng nếu bấm liên tiếp)
+        el.classList.remove('copied'); void el.offsetWidth; el.classList.add('copied');
+        clearTimeout(el._cpT); el._cpT = setTimeout(() => el.classList.remove('copied'), 1300);
+        break;
+      }
       case 'clip-pin': api.clipPin(el.dataset.id); break;
       case 'clip-del': api.clipDel(el.dataset.id); break;
       case 'clip-clear': api.clipClear(); break;
+      case 'wx-exp': toggleWx(); break;
+      case 'shelf-exp': S.shelfOpen = !S.shelfOpen; store.set('shelfOpen', S.shelfOpen); renderShelf(); applyLayout(); break;
       case 'clip-q-clear': { const q = $('#clipQ'); q.value = ''; S.clipQ = ''; $('#clipQx').classList.remove('on'); renderClip(); break; }
-      // Điều khiển
-      case 'ct-timer': case 'ct-sw': S.ctPanel = a === 'ct-timer' ? 'timer' : 'sw'; store.set('ctPanel', S.ctPanel); renderIcRow(); renderTimer(); renderSW(); break;
-      case 'ct-dnd': S.flags.dnd = !S.flags.dnd; api.toggle('dnd', S.flags.dnd); renderIcRow(); break;
-      case 'ct-awake': S.flags.awake = !S.flags.awake; api.toggle('awake', S.flags.awake); renderIcRow(); break;
-      // Hẹn giờ / bấm giờ
-      case 't-plus': timerAdjust(60); break;
-      case 't-toggle':
-        if (T.running) { T.remaining = timerRemaining(); T.running = false; }
-        else { if (T.remaining <= 0) T.remaining = T.total; T.endTs = Date.now() + T.remaining * 1000; T.running = true; }
-        renderTimer(); renderCompact(); applyLayout(); break;
-      case 't-reset': T.running = false; T.remaining = T.total; renderTimer(); renderCompact(); applyLayout(); break;
-      case 'sw-toggle':
-        if (S.sw.running) { S.sw.base = swElapsed(); S.sw.running = false; } else { S.sw.start = performance.now(); S.sw.running = true; }
-        renderSW(); break;
-      case 'sw-lap':
-        if (S.sw.running) S.sw.laps.push(swElapsed()); else { S.sw.base = 0; S.sw.laps = []; }
-        renderSW(); renderLaps(); break;
       // Chuông
       case 'ring-stop': stopRing(); break;
-      case 'ring-restart':
-        T.remaining = T.total; T.endTs = Date.now() + T.total * 1000; T.running = true;
-        stopRing(); renderTimer(); renderCompact(); break;
-      case 'ring-snooze':
-        if (S.ring && S.ring.kind === 'timer') { T.remaining = 300; T.endTs = Date.now() + 300000; T.running = true; stopRing(); renderTimer(); renderCompact(); break; }
-        S.snoozes.push({ ts: Date.now() + 5 * 60000 });
-        stopRing(); break;
     }
   }
-
-  let repTimer = null, repDelay = null;
-  function stopRepeat() { clearTimeout(repDelay); clearInterval(repTimer); repDelay = repTimer = null; }
-  document.addEventListener('pointerdown', (ev) => {
-    const el = ev.target.closest('[data-rep]');
-    if (!el) return;
-    const a = el.dataset.act;
-    act(a, el);
-    stopRepeat();
-    repDelay = setTimeout(() => { repTimer = setInterval(() => act(a, el), 70); }, 380);
-  });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach((e) => document.addEventListener(e, stopRepeat));
-  window.addEventListener('blur', stopRepeat);
 
   document.addEventListener('click', (ev) => {
     const tab = ev.target.closest('.tb');
     if (tab) { setTab(tab.dataset.tab); return; }
-    if (ev.target.closest('[data-rep]')) return;
-    if (ev.target.closest('#mBar') || ev.target.closest('.sl') || ev.target.closest('#ruler')) return;
-    // Công tắc báo thức / nút con trong hàng ưu tiên hơn hàng cha
-    const inner = ev.target.closest('.sw[data-act], .acts button[data-act], .note button[data-act], .sh-item .rm[data-act]');
+    if (ev.target.closest('#mBar')) return;
+    // Nút con trong hàng ưu tiên hơn hàng cha
+    const inner = ev.target.closest('.acts button[data-act], .note button[data-act], .sh-item .rm[data-act]');
     const el = inner || ev.target.closest('[data-act]');
     if (el) act(el.dataset.act, el);
   });
 
-  // Cuộn chuột: chỉnh giờ/phút báo thức, hoặc kéo thước hẹn giờ
+  // Lăn chuột dọc để cuộn ngang: danh sách thiết bị phát, Kệ tạm
   document.addEventListener('wheel', (ev) => {
-    const col = ev.target.closest('.col[data-col]');
-    if (col && S.editor) {
-      ev.preventDefault();
-      const dir = ev.deltaY < 0 ? 1 : -1;
-      if (col.dataset.col === 'h') S.editor.h = wrap(S.editor.h + dir, 24); else S.editor.m = wrap(S.editor.m + dir, 60);
-      renderEditor();
-      return;
-    }
-    if (ev.target.closest('#ruler') && !S.timer.running) {
-      ev.preventDefault();
-      timerAdjust(ev.deltaY < 0 ? 60 : -60);
-      return;
-    }
-    // Danh sách thiết bị phát: lăn chuột dọc để cuộn ngang
-    const chips = ev.target.closest('.out-chips');
+    const chips = ev.target.closest('.out-chips, .shelf-list:not(.grid)');
     if (chips) {
       ev.preventDefault();
       const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
@@ -1460,7 +1410,7 @@
   document.addEventListener('click', (e) => {
     if (Date.now() < chipNoClickUntil) { e.stopPropagation(); e.preventDefault(); }
   }, true);
-  document.addEventListener('scroll', (ev) => { if (ev.target.classList && ev.target.classList.contains('out-chips')) updateChipFade(ev.target); }, true);
+  document.addEventListener('scroll', (ev) => { if (ev.target.classList && (ev.target.classList.contains('out-chips') || ev.target.classList.contains('shelf-list'))) updateChipFade(ev.target); }, true);
 
   document.addEventListener('contextmenu', (ev) => { ev.preventDefault(); api.menu(); });
 
@@ -1492,21 +1442,15 @@
   $('#calIco').innerHTML = ICON.calendar;
   $('#calPrev').innerHTML = ICON.left;
   $('#calNext').innerHTML = ICON.right;
-  $('#alarmAddBtn').innerHTML = ICON.plus;
   $('#clipClearBtn').innerHTML = ICON.minusCircle;
   $('#shelfClearBtn').innerHTML = ICON.minusCircle;
   $('#clipQx').innerHTML = ICON.xCircle;
   $('#noteAddBtn').innerHTML = ICON.plus;
-  $('#tPlus').innerHTML = ICON.plus;
-  $('#tReset').innerHTML = ICON.reset;
-  buildSl($('#slVol'), 'Âm lượng');
-  buildSl($('#slBri'), 'Độ sáng');
-  buildRuler();
   api.clipGet();
   api.shelfGet();
   setTab(S.tab);
   applyLayout();
   setInterval(tick, 100);
 
-  if (window.__DI_TEST) window.__di = { S, startRing, stopRing, act, renderAll, applyLayout, setTab, renderCompact, renderMusic, renderOut, renderVol, renderBri, setAccent, renderClip, renderShelf, showNotice, holidayOf, diffDevices };
+  if (window.__DI_TEST) window.__di = { S, startRing, stopRing, act, renderAll, applyLayout, setTab, renderCompact, renderMusic, renderOut, renderVol, setAccent, renderClip, renderShelf, showNotice, holidayOf, diffDevices };
 })();
