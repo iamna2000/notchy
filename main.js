@@ -1,10 +1,29 @@
-const { app, BrowserWindow, screen, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, shell, desktopCapturer } = require('electron');
+// Notchy: tiến trình chính. File này giữ phần lõi của viên thuốc: cửa sổ, tự ẩn, phím tắt, cầu nối nhạc,
+// khay hệ thống, khởi động. Các phần khác nằm trong lib/:
+//   core (log, cài đặt, gửi tin), prefs (chuẩn hóa cài đặt, có test), bridges (chạy exe Rust / PowerShell),
+//   thumbs (ảnh bìa), stats (tab Hệ thống + âm lượng), weather, clip (bảng tạm), shelf (kệ tạm, tải xong,
+//   ảnh chụp màn hình), updater, settings-window (cửa sổ Cài đặt, báo lỗi, giới thiệu).
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell, desktopCapturer, nativeTheme } = require('electron');
 const path = require('path');
-const fs = require('fs');
-const readline = require('readline');
-const { spawn, execFile } = require('child_process');
-const os = require('os');
-const net = require('net');
+const { execFile } = require('child_process');
+
+// Tên hiển thị (productName) là "Notchy", nhưng giữ thư mục dữ liệu cũ %APPDATA%/dynamic-island-windows
+// (cài đặt, ghi chú, lịch sử bảng tạm) cho cả bản chạy bằng chay.bat lẫn bản cài đặt. Phải gọi trước khi đọc userData.
+app.setName('dynamic-island-windows');
+
+const core = require('./lib/core');
+const P = require('./lib/prefs');
+const { stopProc, writeProc, withFallback } = require('./lib/bridges');
+const thumbs = require('./lib/thumbs');
+const stats = require('./lib/stats');
+const weather = require('./lib/weather');
+const clip = require('./lib/clip');
+const shelf = require('./lib/shelf');
+const updater = require('./lib/updater');
+const settingsWin = require('./lib/settings-window');
+const { log, loadSettings, saveSettings, send } = core;
+
+process.on('uncaughtException', (e) => log('uncaught:', e && e.stack ? e.stack : e));
 
 const WIN_W = 640;
 const WIN_H = 470;
@@ -12,17 +31,15 @@ const WIN_H = 470;
 let win = null;
 let tray = null;
 let mediaProc = null;
-let sysProc = null;
-let quitting = false;
 
 let island = { w: 156, h: 34 }; // kích thước hiện tại của "viên thuốc" do giao diện báo về
 let hoverNow = false;
-let hiddenNow = false;   // viên thuốc đang tự ẩn (trượt lên khỏi màn hình)
-let userHidden = false;  // người dùng chọn ẩn từ khay hệ thống
+let hiddenNow = false;   // viên thuốc đang tự ẩn (thu thành vạch)
+let userHidden = false;  // người dùng chọn ẩn (menu / Cài đặt)
 let fsHidden = false;    // đang ẩn hẳn vì game / ứng dụng Direct3D toàn màn hình
-let alerting = false;    // đang đổ chuông hẹn giờ / nhắc ghi chú
+let alerting = false;    // đang đổ chuông nhắc ghi chú
 let covered = false;     // có cửa sổ khác (trình duyệt phóng to...) nằm dưới viên thuốc
-let fullUnder = false;  // cửa sổ dưới viên thuốc đang toàn màn hình (video, trình chiếu, game không viền): luôn thu thành vạch
+let fullUnder = false;   // cửa sổ dưới viên thuốc đang toàn màn hình (video, trình chiếu, game không viền): luôn thu thành vạch
 let tabUnder = false;    // có tab (thanh tab trình duyệt, Explorer) nằm ngay dưới viên thuốc (di-media dò bằng UI Automation)
 let revealed = false;    // người dùng đã đưa chuột lên mép trên để gọi viên thuốc ra
 let edgeSince = 0;
@@ -30,48 +47,24 @@ let leaveSince = 0;
 let peekUntil = 0;
 let holding = false;     // đang kéo thanh trượt
 let typing = false;      // đang gõ chữ vào ô nhập
+let kbOpen = false;      // viên thuốc đang mở bằng phím tắt (chưa rê chuột vào)
+// Kéo thả từ ứng dụng khác (tệp từ Explorer...): di-media báo nút chuột trái. Bấm giữ ở ngoài viên thuốc rồi kéo tới
+// vùng giữa mép trên => hiện viên thuốc và cho nhận chuột ngay (kể cả đang thu thành vạch), giữ thêm một lúc sau khi
+// thả chuột để cú thả kịp tới cửa sổ.
+let lbDown = false;      // chuột trái đang được giữ
+let pressOutside = false; // lần bấm hiện tại bắt đầu ở ngoài vùng viên thuốc
+let dragUntil = 0;       // đang kéo tới viên thuốc (tới thời điểm này)
 
-// Tên hiển thị (productName) là "Notchy", nhưng giữ thư mục dữ liệu cũ %APPDATA%/dynamic-island-windows
-// (cài đặt, ghi chú, lịch sử bảng tạm) cho cả bản chạy bằng chay.bat lẫn bản cài đặt
-app.setName('dynamic-island-windows');
-
-// ---------- Ghi log + cài đặt ----------
-const userDir = () => app.getPath('userData');
-function log(...a) {
-  try {
-    fs.appendFileSync(path.join(userDir(), 'log.txt'), `[${new Date().toISOString()}] ${a.join(' ')}\n`);
-  } catch (_) {}
-}
-process.on('uncaughtException', (e) => log('uncaught:', e && e.stack ? e.stack : e));
-
-const settingsFile = () => path.join(userDir(), 'settings.json');
-function loadSettings() {
-  // Bỏ BOM ở đầu (Notepad/PowerShell có thể thêm vào): nếu không, JSON.parse lỗi, cài đặt coi như trống
-  // và lần lưu tiếp theo sẽ ghi đè mất hết
-  try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8').replace(/^﻿/, '')); } catch (_) { return {}; }
-}
-function saveSettings(s) {
-  try { fs.writeFileSync(settingsFile(), JSON.stringify(s)); } catch (e) { log('save settings:', e.message); }
-}
-// Chế độ tự ẩn (đọc 1 lần từ cài đặt, cập nhật khi đổi trong menu; pollCursor chạy 20 lần/giây):
-//   'smart'   có cửa sổ nằm dưới viên thuốc (trình duyệt, ứng dụng...) và không dùng 5 giây thì ẩn;
-//             bên dưới là màn hình nền thì hiện liên tục (mặc định)
-//   'covered' có cửa sổ nằm dưới thì ẩn ngay
-//   'tabs'    chỉ ẩn khi viên thuốc đang che tab (Chrome/Edge/Brave/Cốc Cốc/Firefox/Explorer); còn lại hiện liên tục
-//   'idle'    không dùng idleSec giây thì ẩn, kể cả không có cửa sổ nào
-//   'off'     không tự ẩn
-const HIDE_MODES = ['smart', 'covered', 'tabs', 'idle', 'off'];
-const SMART_DELAY = 5000;
-const IDLE_CHOICES = [5, 10, 30];
-let hideMode = 'smart';
-let idleSec = 10;
+// ---------- Tự ẩn (xem lib/prefs.js: off / tabs / window + độ trễ) ----------
+let hide = { mode: 'window', delay: 5, fullBar: true };
 function loadHideSettings() {
   const s = loadSettings();
-  hideMode = HIDE_MODES.includes(s.hideMode) ? s.hideMode : 'smart';
-  idleSec = IDLE_CHOICES.includes(Number(s.idleHide)) ? Number(s.idleHide) : 10;
+  const h = P.normalizeHide(s);
+  hide = { mode: h.mode, delay: h.delay, fullBar: h.fullBar };
+  if (h.changed) { s.hideMode = h.mode; s.hideDelay = h.delay; delete s.idleHide; saveSettings(s); }
 }
-function setHide(mode, sec) {
-  const s = loadSettings(); s.hideMode = mode; if (sec) s.idleHide = sec; saveSettings(s);
+function setHide(mode, delay) {
+  const s = loadSettings(); s.hideMode = mode; if (delay !== undefined) s.hideDelay = delay; saveSettings(s);
   loadHideSettings(); lastUse = Date.now(); refreshTrayMenu();
 }
 let lastUse = Date.now();
@@ -82,17 +75,20 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win) { userHidden = false; updateVisibility(); peek(); }
+  app.on('second-instance', (_e, argv) => {
+    // Mở lại Notchy (menu Start...) khi đang chạy: hiện viên thuốc và mở Cài đặt
+    if (win) { setUserHidden(false); peek(); }
+    const sec = (argv || []).map(String).find((x) => x.startsWith('--settings='));
+    settingsWin.openSettings(sec ? sec.slice(11) : '');
   });
-  app.setAppUserModelId('DynamicIsland.Windows');
+  app.setAppUserModelId('com.na.notchy');
   app.whenReady().then(start);
   app.on('window-all-closed', () => {});
-  app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', () => { core.quitting = true; });
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
-    stopProc(mediaProc); stopProc(sysProc); stopStats();
-    flushClip();
+    stopProc(mediaProc); stats.stopStats();
+    clip.flush();
   });
 }
 
@@ -100,7 +96,7 @@ function peek() {
   peekUntil = Date.now() + 3300;
   if (win && !win.isDestroyed()) win.webContents.send('peek');
 }
-const send = (ch, v) => { if (win && !win.isDestroyed()) win.webContents.send(ch, v); };
+const peekFor = (ms) => { peekUntil = Math.max(peekUntil, Date.now() + ms); };
 
 // ---------- Cửa sổ ----------
 // Màn hình hiển thị viên thuốc: theo cài đặt (id, rồi tên nếu id đổi sau khi cắm lại), không có thì màn hình chính
@@ -134,6 +130,7 @@ function createWindow() {
       backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required',
     },
   });
+  core.win = win;
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true);
   placeWindow();
@@ -148,14 +145,14 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => updateVisibility());
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone:', JSON.stringify(d)));
-  // giao diện (tải lại) sẵn sàng: gửi lại nhạc + ảnh bìa, và trạng thái tự ẩn (gửi trước khi trang tải xong thì bị mất)
-  win.webContents.on('did-finish-load', () => { resendMedia(); if (hiddenNow) send('hidden', true); });
-  win.on('closed', () => { win = null; });
-  // backgroundThrottling tắt (để hẹn giờ, nhắc ghi chú chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
+  // giao diện (tải lại) sẵn sàng: gửi lại nhạc + ảnh bìa, cài đặt giao diện, trạng thái tự ẩn (gửi trước khi trang tải xong thì bị mất)
+  win.webContents.on('did-finish-load', () => { resendMedia(); settingsWin.sendPrefs(); if (hiddenNow) send('hidden', true); });
+  win.on('closed', () => { win = null; core.win = null; });
+  // backgroundThrottling tắt (để nhắc ghi chú chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
   // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
   win.on('show', () => send('winvis', true));
   win.on('hide', () => send('winvis', false));
-  // Cắm/rút màn hình: đặt lại vị trí và cập nhật danh sách màn hình trong menu
+  // Cắm/rút màn hình: đặt lại vị trí và cập nhật danh sách màn hình trong Cài đặt
   screen.on('display-metrics-changed', placeWindow);
   screen.on('display-added', () => { placeWindow(); refreshTrayMenu(); });
   screen.on('display-removed', () => { placeWindow(); refreshTrayMenu(); });
@@ -167,8 +164,47 @@ function updateVisibility() {
   if (shouldShow && !win.isVisible()) win.showInactive();
   if (!shouldShow && win.isVisible()) win.hide();
 }
+function setUserHidden(v) { userHidden = !!v; updateVisibility(); refreshTrayMenu(); }
 
-// ---------- Theo dõi chuột + tự ẩn ----------
+// ---------- Phím tắt mở / đóng viên thuốc (đổi trong Cài đặt > Chung) ----------
+// Mở bằng phím: hiện cả khi đang tự ẩn; Esc hoặc bấm lại phím tắt để đóng; rê chuột vào thì dùng chuột như thường.
+let hotkeyNow = '', hotkeyOk = true;
+function registerHotkey() {
+  if (hotkeyNow) { try { globalShortcut.unregister(hotkeyNow); } catch (_) {} }
+  hotkeyNow = ''; hotkeyOk = true;
+  // Người dùng chưa tự chọn: thử lần lượt các tổ hợp, lấy tổ hợp đầu tiên chưa bị ứng dụng khác chiếm
+  const tries = P.hotkeyTries(loadSettings());
+  if (!tries.length) return;
+  for (const k of tries) {
+    let ok = false;
+    try { ok = globalShortcut.register(k, () => setKbOpen(!kbOpen)); } catch (_) {}
+    if (ok) { hotkeyNow = k; return; }
+    log('hotkey: không đăng ký được', k, '(ứng dụng khác đang dùng)');
+  }
+  hotkeyOk = false;
+}
+function hotkeyInfo() {
+  const s = loadSettings();
+  return { hotkey: hotkeyNow || (P.HOTKEYS.includes(s.hotkey) ? s.hotkey : P.HOTKEYS[0]), ok: hotkeyOk, auto: !P.HOTKEYS.includes(s.hotkey) };
+}
+function setKbOpen(v) {
+  v = !!v;
+  if (v === kbOpen) return;
+  kbOpen = v;
+  if (v) { userHidden = false; updateVisibility(); lastUse = Date.now(); }
+  try {
+    if (v) globalShortcut.register('Escape', () => setKbOpen(false));
+    else if (globalShortcut.isRegistered('Escape')) globalShortcut.unregister('Escape');
+  } catch (_) {}
+  send('kbopen', v);
+}
+
+// Vùng nhận kéo thả: rộng hơn viên thuốc một chút (cả khi đang là vạch nhỏ ở mép trên)
+function inDropZone(p, b) {
+  return Math.abs(p.x - (b.x + b.width / 2)) <= island.w / 2 + 80 && p.y >= b.y && p.y <= b.y + Math.max(island.h, 40) + 24;
+}
+
+// ---------- Theo dõi chuột + tự ẩn (20 lần/giây) ----------
 function pollCursor() {
   if (!win || !win.isVisible()) return;
   const now = Date.now();
@@ -177,20 +213,20 @@ function pollCursor() {
   const cx = b.x + b.width / 2;
   const dx = Math.abs(p.x - cx);
 
-  // Tự ẩn theo hideMode (xem trên); đưa chuột lên sát mép trên (giữ ~0,3 giây) thì hiện lại
-  if (hoverNow || holding || typing || alerting || now <= peekUntil) lastUse = now;
+  if (lbDown && pressOutside && inDropZone(p, b)) dragUntil = now + 700;
+  const dragging = now < dragUntil;
+
+  // Tự ẩn theo chế độ; đưa chuột lên sát mép trên (giữ ~0,3 giây) thì hiện lại
+  if (hoverNow || holding || typing || alerting || kbOpen || now <= peekUntil) lastUse = now;
   if (!covered) coveredSince = 0; else if (!coveredSince) coveredSince = now;
-  // 'smart': đếm 5 giây từ lúc dùng gần nhất hoặc từ lúc cửa sổ vừa xuất hiện bên dưới (lấy mốc muộn hơn)
-  const due = fullUnder || (hideMode === 'smart' ? covered && now - Math.max(lastUse, coveredSince) > SMART_DELAY
-    : hideMode === 'covered' ? covered
-    : hideMode === 'tabs' ? covered && tabUnder
-    : hideMode === 'idle' ? now - lastUse > idleSec * 1000
+  // 'window': đếm delay giây từ lúc dùng gần nhất hoặc từ lúc cửa sổ vừa xuất hiện bên dưới (lấy mốc muộn hơn)
+  const due = (hide.fullBar && fullUnder) || (hide.mode === 'window' ? covered && now - Math.max(lastUse, coveredSince) >= hide.delay * 1000
+    : hide.mode === 'tabs' ? covered && tabUnder
     : false);
-  const wantAuto = due && !alerting && now > peekUntil;
+  const wantAuto = due && !alerting && !kbOpen && !dragging && now > peekUntil;
   if (wantAuto) {
     if (!revealed) {
-      // Hiện lại khi đưa chuột lên mép trên HOẶC rê vào vùng thanh Home (10px trên cùng, rộng hơn thanh 2 bên).
-      // Trước đây chỉ tính hàng điểm ảnh trên cùng (y=0) nên rê/bấm thẳng vào thanh (y=3..7) không có tác dụng.
+      // Hiện lại khi đưa chuột lên mép trên HOẶC rê vào vùng thanh Home (10px trên cùng, rộng hơn thanh 2 bên)
       const atEdge = p.y <= b.y + 10 && dx <= island.w / 2 + 60;
       if (atEdge) {
         if (!edgeSince) edgeSince = now;
@@ -211,104 +247,19 @@ function pollCursor() {
   if (!hidden) {
     const pad = hoverNow ? 14 : 3;
     inside = dx <= island.w / 2 + pad && p.y >= b.y && p.y <= b.y + island.h + pad;
-    if (holding) inside = true;
+    if (holding || dragging) inside = true;
   }
   if (inside !== hoverNow) {
     hoverNow = inside;
+    if (inside && kbOpen) setKbOpen(false); // rê chuột vào: dùng chuột như thường
     win.setIgnoreMouseEvents(!inside, { forward: true });
     send('hover', inside);
   }
 }
 
-// ---------- Cầu nối PowerShell ----------
-// Chạy một cầu nối (exe Rust hoặc PowerShell): mỗi dòng stdout là một JSON, lệnh gửi qua stdin
-function spawnBridge(label, cmd, args, onLine, onExit) {
-  let proc;
-  try {
-    proc = spawn(cmd, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch (e) { log('spawn', label, e.message); return null; }
-  readline.createInterface({ input: proc.stdout }).on('line', onLine);
-  proc.stderr.on('data', (d) => log(label, 'stderr:', String(d).slice(0, 300)));
-  proc.stdin.on('error', () => {});
-  proc.on('error', (e) => log(label, 'error:', e.message));
-  proc.on('exit', (code) => { log(label, 'exit', code); onExit(); });
-  return proc;
-}
-function spawnPS(file, args, onLine, onExit) {
-  const script = path.join(__dirname, 'scripts', file);
-  return spawnBridge(file, 'powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], onLine, onExit);
-}
-// Cầu nối Rust (native/): bản đóng gói đặt ở bin/, bản đang phát triển ở native/target/release/
-function nativeExe(name) {
-  for (const p of [path.join(__dirname, 'native', 'target', 'release', name + '.exe'), path.join(__dirname, 'bin', name + '.exe')]) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-function stopProc(p) { try { if (p) p.kill(); } catch (_) {} }
-function writeProc(p, line) { try { if (p && p.stdin.writable) p.stdin.write(line + '\n'); } catch (_) {} }
-
+// ---------- Cầu nối nhạc (di-media, dự phòng media.ps1): nhạc, cửa sổ che, tab, toàn màn hình ----------
 // Nhớ trạng thái nhạc gần nhất kèm ảnh bìa. Cầu nối chỉ gửi ảnh bìa MỘT lần mỗi bài; nếu giao diện chưa
-// tải xong (di-media khởi động gần như tức thì) hoặc tải lại thì ảnh bị mất -> gửi lại khi giao diện sẵn sàng.
-// ---------- Ảnh bìa: thu nhỏ + bộ nhớ đệm theo bài ----------
-// Ảnh gốc từ Windows có thể là PNG 30..150 KB trong khi giao diện chỉ hiện 66px: thu về tối đa 240px JPEG
-// (~10 KB) cho IPC và giải mã nhẹ. Lưu theo bài (key) trong RAM và trên đĩa (userData/thumbs), xóa sau 1 ngày,
-// tối đa 300 ảnh: quay lại bài đã nghe thì có ảnh ngay, không phải chờ đọc lại.
-const THUMB_TTL = 24 * 3600 * 1000, THUMB_MAX = 300, THUMB_PX = 240;
-const thumbDir = () => path.join(userDir(), 'thumbs');
-const thumbMem = new Map(); // key -> { url, at }
-const thumbFile = (key) => path.join(thumbDir(), require('crypto').createHash('sha1').update(key).digest('hex') + '.jpg');
-function shrinkThumb(url) {
-  try {
-    const img = nativeImage.createFromDataURL(url);
-    if (img.isEmpty()) return url;
-    const { width, height } = img.getSize(), k = THUMB_PX / Math.max(width, height);
-    const out = k < 1 ? img.resize({ width: Math.round(width * k), height: Math.round(height * k), quality: 'best' }) : img;
-    return 'data:image/jpeg;base64,' + out.toJPEG(88).toString('base64');
-  } catch (e) { log('thumb shrink:', e.message); return url; }
-}
-function cacheThumb(key, url) {
-  thumbMem.delete(key); thumbMem.set(key, { url, at: Date.now() }); // Map giữ thứ tự chèn: đầu là cũ nhất
-  while (thumbMem.size > THUMB_MAX) thumbMem.delete(thumbMem.keys().next().value);
-  const b64 = url.slice(url.indexOf(',') + 1);
-  fs.promises.mkdir(thumbDir(), { recursive: true })
-    .then(() => fs.promises.writeFile(thumbFile(key), Buffer.from(b64, 'base64')))
-    .catch((e) => log('thumb cache write:', e.message));
-}
-function cachedThumb(key) {
-  const m = thumbMem.get(key);
-  if (m && Date.now() - m.at < THUMB_TTL) return m.url;
-  try {
-    const f = thumbFile(key), st = fs.statSync(f);
-    if (Date.now() - st.mtimeMs >= THUMB_TTL) return '';
-    const url = 'data:image/jpeg;base64,' + fs.readFileSync(f).toString('base64');
-    thumbMem.set(key, { url, at: st.mtimeMs });
-    return url;
-  } catch (_) { return ''; }
-}
-// Xóa ảnh quá 1 ngày, và bớt ảnh cũ nhất nếu quá THUMB_MAX (chạy lúc mở app và mỗi giờ)
-async function pruneThumbs() {
-  try {
-    const dir = thumbDir();
-    const files = await Promise.all((await fs.promises.readdir(dir)).filter((f) => f.endsWith('.jpg'))
-      .map(async (f) => ({ f: path.join(dir, f), t: (await fs.promises.stat(path.join(dir, f))).mtimeMs })));
-    files.sort((a, b) => b.t - a.t);
-    const now = Date.now();
-    await Promise.all(files.filter((x, i) => now - x.t >= THUMB_TTL || i >= THUMB_MAX).map((x) => fs.promises.unlink(x.f).catch(() => {})));
-  } catch (_) {}
-}
-// Tin nhắn nhạc từ cầu nối: thu nhỏ ảnh mới và lưu; bài mới chưa có ảnh thì lấy từ bộ nhớ đệm ngay
-function processThumb(m) {
-  if (m.type !== 'media' || !m.active || !m.key) return;
-  if (typeof m.thumb === 'string' && m.thumb.startsWith('data:')) {
-    m.thumb = shrinkThumb(m.thumb);
-    cacheThumb(m.key, m.thumb);
-  } else if (m.thumb === '') {
-    const c = cachedThumb(m.key);
-    if (c) m.thumb = c;
-  }
-}
-
+// tải xong hoặc tải lại thì ảnh bị mất -> gửi lại khi giao diện sẵn sàng.
 let lastMedia = null, lastThumb = '';
 function rememberMedia(m) {
   if (!lastMedia || lastMedia.key !== m.key) lastThumb = '';
@@ -318,35 +269,34 @@ function rememberMedia(m) {
 function resendMedia() {
   if (lastMedia) send('media', lastMedia.active ? { ...lastMedia, thumb: lastThumb } : lastMedia);
 }
-let mediaNativeFails = 0; // exe Rust thoát ngay sau khi chạy 3 lần liền -> dùng lại PowerShell
-function startMedia() {
-  if (process.platform !== 'win32' || quitting) return;
-  const onLine = (line) => {
+const startMediaProc = withFallback({
+  name: 'di-media', ps: 'media.ps1', label: 'media bridge',
+  args: ['--parent-pid', String(process.pid)], psArgs: ['-ParentPid', String(process.pid)],
+  onLine: (line) => {
     let m;
     try { m = JSON.parse(line); } catch (_) { return; }
     if (m.type === 'fs') { fsHidden = !!m.value; updateVisibility(); }
     else if (m.type === 'cover') { covered = !!m.value; if (!covered) { tabUnder = false; fullUnder = false; } }
     else if (m.type === 'full') { fullUnder = !!m.value; }
     else if (m.type === 'tabs') { tabUnder = !!m.value; }
-    else { if (m.type === 'media') { processThumb(m); rememberMedia(m); } send('media', m); }
-  };
-  const exe = mediaNativeFails < 3 ? nativeExe('di-media') : null;
-  const startedAt = Date.now();
-  const onExit = () => {
-    mediaProc = null;
-    if (exe && Date.now() - startedAt < 10000 && ++mediaNativeFails >= 3) log('di-media lỗi liên tục, chuyển sang media.ps1');
-    if (!quitting) setTimeout(startMedia, exe && mediaNativeFails < 3 ? 1000 : 5000);
-  };
-  mediaProc = exe
-    ? spawnBridge('di-media', exe, ['--parent-pid', String(process.pid)], onLine, onExit)
-    : spawnPS('media.ps1', ['-ParentPid', String(process.pid)], onLine, onExit);
-  if (mediaProc) log('media bridge:', exe ? 'di-media (Rust)' : 'media.ps1');
+    else if (m.type === 'lbtn') {
+      lbDown = !!m.value;
+      // Bấm ngay trong vùng viên thuốc (bấm tab trình duyệt nằm dưới vạch, kéo tệp từ kệ ra...) không tính là kéo tới
+      if (lbDown && win) pressOutside = !hoverNow && !inDropZone(screen.getCursorScreenPoint(), win.getBounds());
+    }
+    else { if (m.type === 'media') { thumbs.processThumb(m); rememberMedia(m); } send('media', m); }
+  },
+  // Cầu nối thoát: bật lại (exe Rust sau 1 giây, PowerShell sau 5 giây)
+  onExit: (native) => { mediaProc = null; if (!core.quitting) setTimeout(startMedia, native ? 1000 : 5000); },
+});
+function startMedia() {
+  if (process.platform !== 'win32' || core.quitting) return;
+  mediaProc = startMediaProc();
   sendProbe();
 }
 // Dò cửa sổ nằm dưới viên thuốc ở 3 điểm: giữa và hai đầu, gần cạnh dưới của viên thuốc thu gọn.
 // probeBox: kích thước viên thuốc ở dạng thu gọn/hover gần nhất (không lấy kích thước lúc mở bảng hay lúc ẩn).
 let probeBox = { w: 156, h: 34 };
-
 function sendProbe() {
   if (!mediaProc || process.platform !== 'win32') return;
   try {
@@ -354,333 +304,14 @@ function sendProbe() {
     const half = Math.min(190, Math.max(30, probeBox.w / 2 - 12));
     const y = d.bounds.y + Math.max(4, probeBox.h - 8);
     const pts = [cx - half, cx, cx + half].map((x) => screen.dipToScreenPoint({ x: Math.round(x), y: Math.round(y) }));
-    const cmd = 'probe:' + pts.map((p) => `${p.x}:${p.y}`).join(';');
-
-    writeProc(mediaProc, cmd);
+    writeProc(mediaProc, 'probe:' + pts.map((p) => `${p.x}:${p.y}`).join(';'));
   } catch (e) { log('probe:', e.message); }
 }
-function ensureSys() {
-  if (sysProc || process.platform !== 'win32' || quitting) return;
-  sysProc = spawnPS('system.ps1', [], (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch (_) { return; }
-    if (m.type === 'net') onNet(m); else send('sys', m);
-  }, () => { sysProc = null; });
-}
 
-// ---------- Theo dõi hệ thống (tab Hệ thống) ----------
-// Ghi nền liên tục để biểu đồ có lịch sử thật: mỗi 2 giây (1 giây khi tab đang mở), giữ 1 giờ gần nhất.
-// CPU/RAM: Node; GPU: nvidia-smi chạy liên tục (-lms); mạng: lệnh 'net' của system.ps1;
-// độ trễ: thời gian bắt tay TCP tới 1.1.1.1:443 (không cần quyền ICMP, không phụ thuộc ngôn ngữ).
-const HIST_MS = 3600 * 1000;
-const stats = {
-  on: false, live: false, timer: null, gpuProc: null, gpu: null, gpuOk: true, cpuPrev: null, netPrev: null,
-  down: null, up: null, ping: null, pingAt: 0,
-  hist: { t: [], cpu: [], ram: [], gpu: [], down: [], up: [] },
-};
-function cpuTimes() {
-  let idle = 0, total = 0;
-  for (const c of os.cpus()) { const t = c.times; idle += t.idle; total += t.user + t.nice + t.sys + t.idle + t.irq; }
-  return { idle, total };
-}
-function onNet(m) {
-  const now = Date.now(), p = stats.netPrev;
-  if (p && now > p.at && m.rx >= p.rx && m.tx >= p.tx) {
-    const dt = (now - p.at) / 1000;
-    stats.down = (m.rx - p.rx) / dt; stats.up = (m.tx - p.tx) / dt;
-  }
-  stats.netPrev = { rx: m.rx, tx: m.tx, at: now };
-}
-function startGpu() {
-  if (stats.gpuProc || !stats.gpuOk || process.platform !== 'win32') return;
-  let p;
-  try {
-    p = spawn('nvidia-smi', ['--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw',
-      '--format=csv,noheader,nounits', '-lms', '1000'], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch (e) { stats.gpuOk = false; return; }
-  p.on('error', () => { stats.gpuOk = false; stats.gpu = null; stats.gpuProc = null; }); // không có card NVIDIA
-  readline.createInterface({ input: p.stdout }).on('line', (line) => {
-    const v = line.split(',').map((s) => parseFloat(s));
-    if (v.length >= 4 && !isNaN(v[0])) stats.gpu = { util: v[0], temp: isNaN(v[1]) ? null : v[1], memUsed: v[2], memTotal: v[3], power: isNaN(v[4]) ? null : v[4] };
-  });
-  p.on('exit', () => { if (stats.gpuProc === p) stats.gpuProc = null; });
-  stats.gpuProc = p;
-}
-function measurePing() {
-  const t0 = process.hrtime.bigint();
-  const s = net.connect({ host: '1.1.1.1', port: 443 });
-  const done = (ms) => { stats.ping = ms; s.destroy(); };
-  s.setTimeout(1500, () => done(null));
-  s.once('connect', () => done(Number(process.hrtime.bigint() - t0) / 1e6));
-  s.once('error', () => done(null));
-}
-function statsTick() {
-  const now = Date.now();
-  const c = cpuTimes(), p = stats.cpuPrev;
-  const cpu = p && c.total > p.total ? Math.max(0, Math.min(1, 1 - (c.idle - p.idle) / (c.total - p.total))) : null;
-  stats.cpuPrev = c;
-  ensureSys(); writeProc(sysProc, 'net');
-  if (now - stats.pingAt >= (stats.live ? 2000 : 10000)) { stats.pingAt = now; measurePing(); }
-  if (stats.gpuOk && !stats.gpuProc) startGpu(); // nvidia-smi bị tắt ngang thì bật lại
-  const total = os.totalmem(), ramUsed = total - os.freemem(), g = stats.gpu;
-  // Ghi lịch sử (giá trị 0..1, mạng là byte/giây), bỏ phần cũ hơn 1 giờ
-  const h = stats.hist;
-  h.t.push(now); h.cpu.push(cpu); h.ram.push(ramUsed / total); h.gpu.push(g ? g.util / 100 : null);
-  h.down.push(stats.down); h.up.push(stats.up);
-  let cut = 0;
-  while (cut < h.t.length && h.t[cut] < now - HIST_MS) cut++;
-  if (cut) Object.values(h).forEach((a) => a.splice(0, cut));
-  if (stats.live) {
-    send('stats', {
-      t: now, cpu, cores: os.cpus().length, ramUsed, ramTotal: total,
-      gpu: g, down: stats.down, up: stats.up, ping: stats.ping,
-    });
-  }
-}
-function statsLoop() {
-  try { statsTick(); } catch (e) { log('stats:', e.message); }
-  stats.timer = setTimeout(statsLoop, stats.live ? 1000 : 2000);
-}
-function startStats() {
-  if (stats.on) return;
-  stats.on = true; stats.cpuPrev = cpuTimes();
-  startGpu();
-  ensureSys(); writeProc(sysProc, 'net');
-  stats.timer = setTimeout(statsLoop, 1000);
-}
-function stopStats() {
-  stats.on = false;
-  clearTimeout(stats.timer); stats.timer = null;
-  stopProc(stats.gpuProc); stats.gpuProc = null;
-}
-// ---------- Thời tiết (viên thuốc thu gọn khi không phát gì + tab Thời tiết) ----------
-// Vị trí đoán theo IP (ipwho.is), lưu lại 1 ngày; thời tiết hiện tại + dự báo 7 ngày từ Open-Meteo,
-// cập nhật mỗi 15 phút. Cả hai miễn phí, không cần khóa. Tắt được trong menu ("Hiện thời tiết").
-const weather = { data: null, timer: null, failLogged: false };
-const weatherOn = () => loadSettings().weather !== false;
-async function weatherLocation() {
-  const s = loadSettings();
-  if (s.weatherLoc && Date.now() - s.weatherLoc.at < 86400000) return s.weatherLoc;
-  const j = await (await fetch('https://ipwho.is/?fields=success,city,latitude,longitude', { signal: AbortSignal.timeout(8000) })).json();
-  if (!j.success || !Number.isFinite(j.latitude)) throw new Error('không xác định được vị trí');
-  const loc = { lat: j.latitude, lon: j.longitude, city: j.city || '', at: Date.now() };
-  const s2 = loadSettings(); s2.weatherLoc = loc; saveSettings(s2);
-  return loc;
-}
-const DAILY_VARS = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'apparent_temperature_max', 'apparent_temperature_min',
-  'precipitation_sum', 'precipitation_probability_max', 'wind_speed_10m_max', 'wind_gusts_10m_max', 'uv_index_max'];
-async function refreshWeather() {
-  clearTimeout(weather.timer); weather.timer = null;
-  if (!weatherOn()) { weather.data = null; send('weather', null); return; }
-  let next = 15 * 60000;
-  try {
-    const loc = await weatherLocation();
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}`
-      + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m'
-      + `&daily=${DAILY_VARS.join(',')}&timezone=auto&forecast_days=7`;
-    const j = await (await fetch(url, { signal: AbortSignal.timeout(10000) })).json();
-    const c = j.current, d = j.daily || {};
-    if (!c || !Number.isFinite(c.temperature_2m)) throw new Error('dữ liệu thời tiết không hợp lệ');
-    const num = (a, i) => (Array.isArray(a) && Number.isFinite(a[i]) ? a[i] : null);
-    const daily = (d.time || []).map((date, i) => ({
-      date, code: num(d.weather_code, i), hi: num(d.temperature_2m_max, i), lo: num(d.temperature_2m_min, i),
-      fhi: num(d.apparent_temperature_max, i), flo: num(d.apparent_temperature_min, i),
-      rain: num(d.precipitation_sum, i), pop: num(d.precipitation_probability_max, i),
-      wind: num(d.wind_speed_10m_max, i), gust: num(d.wind_gusts_10m_max, i), uv: num(d.uv_index_max, i),
-    }));
-    weather.data = {
-      temp: c.temperature_2m, code: c.weather_code, day: !!c.is_day, city: loc.city,
-      feels: Number.isFinite(c.apparent_temperature) ? c.apparent_temperature : null,
-      hum: Number.isFinite(c.relative_humidity_2m) ? c.relative_humidity_2m : null,
-      wind: Number.isFinite(c.wind_speed_10m) ? c.wind_speed_10m : null,
-      hi: daily.length ? daily[0].hi : null, lo: daily.length ? daily[0].lo : null,
-      daily, at: Date.now(),
-    };
-    weather.failLogged = false;
-    send('weather', weather.data);
-  } catch (e) {
-    if (!weather.failLogged) { log('weather:', e.message); weather.failLogged = true; } // mất mạng: chỉ ghi 1 lần
-    next = 5 * 60000;
-  }
-  if (weatherOn()) weather.timer = setTimeout(refreshWeather, next);
-}
-
-// Tab Hệ thống mở: gửi toàn bộ lịch sử một lần rồi cập nhật mỗi giây; đóng: quay về ghi nền 2 giây
-function setStatsLive(on) {
-  if (!stats.on) startStats();
-  stats.live = !!on;
-  if (on) {
-    send('statsHist', stats.hist);
-    clearTimeout(stats.timer); statsLoop();
-  }
-}
-
-// ---------- Bảng tạm ----------
-const clipFile = () => path.join(userDir(), 'clip.json');
-let clipList = [];
-let clipDirty = false;
-let lastClipText = '';
-function loadClip() {
-  try { const a = JSON.parse(fs.readFileSync(clipFile(), 'utf8')); if (Array.isArray(a)) clipList = a.filter((x) => x && typeof x.text === 'string'); } catch (_) {}
-}
-function flushClip() {
-  if (!clipDirty) return;
-  clipDirty = false;
-  try { fs.writeFileSync(clipFile(), JSON.stringify(clipList)); } catch (e) { log('save clip:', e.message); }
-}
-function clipChanged() { clipDirty = true; send('clip', clipList); }
-function pollClipboard() {
-  let text = '';
-  try {
-    // Trình quản lý mật khẩu đánh dấu nội dung nhạy cảm bằng định dạng này => bỏ qua
-    if (clipboard.availableFormats().some((f) => /ExcludeClipboardContentFromMonitorProcessing/i.test(f))) return;
-    text = clipboard.readText();
-  } catch (_) { return; }
-  if (!text || !text.trim() || text === lastClipText) return;
-  lastClipText = text;
-  if (text.length > 5000) text = text.slice(0, 5000);
-  const old = clipList.find((x) => x.text === text);
-  clipList = clipList.filter((x) => x.text !== text);
-  clipList.unshift({ id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), text, pin: old ? !!old.pin : false, ts: Date.now() });
-  let n = 0;
-  clipList = clipList.filter((x) => x.pin || ++n <= 50);
-  clipChanged();
-}
-
-// ---------- Kệ tạm (kéo tệp vào / ra) ----------
-let shelf = [];                 // [{ id, path }] chỉ lưu đường dẫn, không sao chép tệp
-const iconCache = new Map();
-function loadShelf() {
-  const s = loadSettings();
-  shelf = Array.isArray(s.shelf) ? s.shelf.filter((x) => x && typeof x.id === 'string' && typeof x.path === 'string') : [];
-}
-function saveShelf() { const s = loadSettings(); s.shelf = shelf; saveSettings(s); }
-const exists = (p) => { try { fs.accessSync(p); return true; } catch (_) { return false; } };
-async function shelfPayload() {
-  const before = shelf.length;
-  shelf = shelf.filter((x) => exists(x.path));
-  if (shelf.length !== before) saveShelf();
-  const out = [];
-  for (const it of shelf) {
-    let icon = iconCache.get(it.path);
-    if (!icon) {
-      try { icon = (await app.getFileIcon(it.path, { size: 'normal' })).toDataURL(); } catch (_) { icon = ''; }
-      if (icon) { if (iconCache.size > 200) iconCache.clear(); iconCache.set(it.path, icon); }
-    }
-    let size = 0;
-    try { const st = fs.statSync(it.path); if (st.isFile()) size = st.size; } catch (_) {}
-    out.push({ id: it.id, name: path.basename(it.path) || it.path, dir: path.dirname(it.path), icon, size, thumb: await shelfThumb(it.path) });
-  }
-  return out;
-}
-// Ảnh / video: lấy ảnh xem trước của Windows (như Explorer). Lưu theo đường dẫn + thời điểm sửa tệp,
-// tệp bị sửa thì tự lấy lại. Không lấy được (định dạng lạ, thiếu codec) thì dùng icon như cũ.
-const THUMB_EXT = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|heif|avif|ico|jfif|mp4|mov|mkv|avi|webm|wmv|m4v)$/i;
-const shelfThumbs = new Map();
-async function shelfThumb(p) {
-  if (!THUMB_EXT.test(p) || process.platform !== 'win32') return '';
-  let key;
-  try { key = p + '|' + fs.statSync(p).mtimeMs; } catch (_) { return ''; }
-  if (shelfThumbs.has(key)) return shelfThumbs.get(key);
-  let url = '';
-  try {
-    const img = await nativeImage.createThumbnailFromPath(p, { width: 192, height: 192 });
-    if (!img.isEmpty()) url = img.toDataURL();
-  } catch (e) { log('shelf thumb:', path.basename(p), e.message); }
-  if (shelfThumbs.size > 100) shelfThumbs.clear();
-  shelfThumbs.set(key, url);
-  return url;
-}
-async function sendShelf() { try { send('shelf', await shelfPayload()); } catch (e) { log('shelf:', e.message); } }
-
-// ---------- Thông báo "tải xong" (theo dõi thư mục Downloads) ----------
-function watchDownloads() {
-  let dir;
-  try { dir = app.getPath('downloads'); } catch (_) { return; }
-  const TEMP = /\.(crdownload|part|tmp|download|partial|opdownload)$/i;
-  const timers = new Map();
-  const told = new Map();
-  const check = (name) => {
-    const f = path.join(dir, name);
-    let st;
-    try { st = fs.statSync(f); } catch (_) { return; }
-    if (!st.isFile() || st.size === 0 || Date.now() - st.mtimeMs > 20000) return;
-    setTimeout(() => {   // đợi kích thước ổn định rồi mới báo
-      let st2;
-      try { st2 = fs.statSync(f); } catch (_) { return; }
-      if (st2.size !== st.size) return check(name);
-      const key = name + '|' + st2.size + '|' + Math.round(st2.mtimeMs / 1000);
-      if (told.has(key)) return;
-      told.set(key, 1);
-      if (told.size > 100) told.clear();
-      peekUntil = Date.now() + 4200;
-      send('toast', { kind: 'download', title: 'Đã tải xong', sub: name });
-    }, 1200);
-  };
-  try {
-    fs.watch(dir, { persistent: false }, (_evt, name) => {
-      if (!name || TEMP.test(name) || /^(~\$|\.)/.test(name)) return;
-      clearTimeout(timers.get(name));
-      timers.set(name, setTimeout(() => { timers.delete(name); check(name); }, 1500));
-    });
-    log('watching downloads:', dir);
-  } catch (e) { log('watch downloads:', e.message); }
-}
-
-// ---------- Ảnh chụp màn hình -> Kệ tạm ----------
-// Win+Shift+S / PrtScn: Snipping Tool tự lưu ảnh vào Pictures/Screenshots (mặc định trên Windows 11).
-// Theo dõi thư mục đó (cả bản OneDrive nếu có): ảnh mới được đưa lên đầu kệ để kéo thả ngay.
-// Kệ chỉ giữ 10 ảnh chụp tự thêm gần nhất (tệp thật không bị xóa). Tắt được trong menu.
-const SHOT_KEEP = 10;
-const shotsOn = () => loadSettings().shelfShots !== false;
-function addShot(f) {
-  if (!shotsOn() || shelf.some((x) => x.path === f)) return;
-  shelf.unshift({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), path: f, shot: true });
-  let n = 0;
-  shelf = shelf.filter((x) => !x.shot || ++n <= SHOT_KEEP).slice(0, 40);
-  saveShelf(); sendShelf();
-  peekUntil = Date.now() + 4200;
-  shelfThumb(f).then((thumb) => send('toast', { kind: 'shot', title: 'Đã thêm vào Kệ tạm', sub: path.basename(f), thumb }));
-}
-function watchScreenshots() {
-  const dirs = new Set();
-  try { dirs.add(path.join(app.getPath('pictures'), 'Screenshots')); } catch (_) {}
-  if (process.env.OneDrive) dirs.add(path.join(process.env.OneDrive, 'Pictures', 'Screenshots'));
-  const IMG = /\.(png|jpe?g|gif|webp|bmp)$/i;
-  const timers = new Map();
-  for (const dir of dirs) {
-    if (!exists(dir)) continue;
-    const check = (f, size0) => {
-      let st;
-      try { st = fs.statSync(f); } catch (_) { return; }
-      if (!st.isFile() || st.size === 0 || Date.now() - st.birthtimeMs > 30000) return; // chỉ ảnh vừa tạo
-      if (st.size !== size0) { timers.set(f, setTimeout(() => check(f, st.size), 600)); return; } // đợi ghi xong
-      addShot(f);
-    };
-    try {
-      fs.watch(dir, { persistent: false }, (_evt, name) => {
-        if (!name || !IMG.test(name)) return;
-        const f = path.join(dir, name);
-        clearTimeout(timers.get(f));
-        timers.set(f, setTimeout(() => check(f, -1), 500));
-      });
-      log('watching screenshots:', dir);
-    } catch (e) { log('watch screenshots:', e.message); }
-  }
-}
-
-// ---------- Khay hệ thống ----------
-function autostartEnabled() {
-  try { return app.getLoginItemSettings({ path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] }).openAtLogin; } catch (_) { return false; }
-}
-function setAutostart(on) {
-  try { app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] }); } catch (e) { log('autostart:', e.message); }
-  const s = loadSettings(); s.autostart = on; saveSettings(s);
-}
+// ---------- Khay hệ thống + menu chuột phải ----------
 // Icon khay đơn sắc như icon hệ thống: trắng trên taskbar tối, đen trên taskbar sáng (theo màu taskbar của Windows)
 function taskbarIsLight() {
   try {
-    const { nativeTheme } = require('electron');
     const dark = nativeTheme.shouldUseDarkColorsForSystemIntegratedUI;
     return dark === undefined ? !nativeTheme.shouldUseDarkColors : !dark;
   } catch (_) { return false; }
@@ -696,86 +327,21 @@ function trayImage() {
   // Dự phòng cuối: ô vuông trắng 16x16 (BGRA) để chắc chắn có icon
   return nativeImage.createFromBitmap(Buffer.alloc(16 * 16 * 4, 0xff), { width: 16, height: 16 });
 }
-// ---------- Tự cập nhật (chỉ bản cài đặt; bản mới đăng ở GitHub Releases) ----------
-// Mở app và mỗi 4 giờ: kiểm tra bản mới, tải ngầm, báo trên viên thuốc. Cài khi người dùng chọn trong menu
-// hoặc tự cài lúc thoát app / tắt máy.
-const upd = { state: 'idle', version: '', percent: 0, err: '' }; // idle | checking | downloading | ready | latest | error
-let updater = null;
-function setupUpdater() {
-  if (!app.isPackaged) return;
-  try { updater = require('electron-updater').autoUpdater; } catch (e) { log('updater:', e.message); return; }
-  updater.autoDownload = true;
-  updater.autoInstallOnAppQuit = true;
-  updater.logger = { info: (m) => log('update:', m), warn: (m) => log('update warn:', m), error: (m) => log('update error:', m), debug: () => {} };
-  updater.on('checking-for-update', () => { upd.state = 'checking'; refreshTrayMenu(); });
-  updater.on('update-not-available', () => { upd.state = 'latest'; refreshTrayMenu(); });
-  updater.on('update-available', (i) => { upd.state = 'downloading'; upd.version = i.version; upd.percent = 0; refreshTrayMenu(); });
-  updater.on('download-progress', (pr) => { const p = Math.floor(pr.percent || 0); if (p - upd.percent >= 10) { upd.percent = p; refreshTrayMenu(); } });
-  updater.on('update-downloaded', (i) => {
-    upd.state = 'ready'; upd.version = i.version; refreshTrayMenu();
-    send('toast', { kind: 'update', title: `Có bản mới ${i.version}`, sub: 'Chuột phải viên thuốc > Cập nhật, hoặc tự cài khi tắt máy' });
-    peek();
-  });
-  updater.on('error', (e) => { upd.state = 'error'; upd.err = String((e && e.message) || e).split(String.fromCharCode(10))[0].trim(); log('update error:', upd.err); refreshTrayMenu(); });
-  const check = () => { if (upd.state !== 'ready' && upd.state !== 'downloading') updater.checkForUpdates().catch(() => {}); };
-  setTimeout(check, 15000);
-  setInterval(check, 4 * 3600 * 1000);
-}
-function updateMenu() {
-  if (!app.isPackaged) return [];
-  const st = upd.state;
-  const item = st === 'ready' ? { label: `Cập nhật lên ${upd.version} (khởi động lại)`, click: () => { quitting = true; updater.quitAndInstall(true, true); } }
-    : st === 'downloading' ? { label: `Đang tải bản ${upd.version}… ${upd.percent}%`, enabled: false }
-    : st === 'checking' ? { label: 'Đang kiểm tra cập nhật…', enabled: false }
-    : { label: st === 'latest' ? 'Kiểm tra cập nhật (đang là bản mới nhất)' : st === 'error' ? 'Kiểm tra cập nhật (lần trước lỗi)' : 'Kiểm tra cập nhật',
-        click: () => updater && updater.checkForUpdates().catch(() => {}) };
-  return [item, { type: 'separator' }];
-}
-
+// Menu chuột phải (viên thuốc và khay) chỉ giữ việc hay dùng; mọi tùy chỉnh nằm trong cửa sổ Cài đặt
 function buildMenu() {
+  const u = updater.state();
   return Menu.buildFromTemplate([
-    { label: `Notchy ${app.getVersion()}`, enabled: false },
-    ...updateMenu(),
+    ...(u.state === 'ready' ? [{ label: `Cập nhật lên ${u.version} (khởi động lại)`, click: updater.install }, { type: 'separator' }] : []),
+    { label: 'Cài đặt…', click: () => settingsWin.openSettings() },
+    { label: userHidden ? 'Hiện viên thuốc' : 'Ẩn viên thuốc', click: () => setUserHidden(!userHidden) },
     { type: 'separator' },
-    { label: userHidden ? 'Hiện viên thuốc' : 'Ẩn viên thuốc', click: () => { userHidden = !userHidden; updateVisibility(); refreshTrayMenu(); } },
-    ...displayMenu(),
-    { label: 'Tự ẩn', submenu: [
-      { label: 'Không tự ẩn', type: 'radio', checked: hideMode === 'off', click: () => setHide('off') },
-      { type: 'separator' },
-      { label: 'Khi có cửa sổ bên dưới', enabled: false },
-      { label: 'Sau 5 giây không dùng', type: 'radio', checked: hideMode === 'smart', click: () => setHide('smart') },
-      { label: 'Ngay lập tức', type: 'radio', checked: hideMode === 'covered', click: () => setHide('covered') },
-      { label: 'Chỉ khi che tab trình duyệt', type: 'radio', checked: hideMode === 'tabs', click: () => setHide('tabs') },
-      { type: 'separator' },
-      { label: 'Luôn ẩn khi không dùng', enabled: false },
-      ...IDLE_CHOICES.map((v) => ({
-        label: `Sau ${v} giây`, type: 'radio', checked: hideMode === 'idle' && idleSec === v, click: () => setHide('idle', v),
-      })),
-    ] },
-    { label: 'Ảnh chụp màn hình vào Kệ tạm', type: 'checkbox', checked: shotsOn(), click: (i) => { const s = loadSettings(); s.shelfShots = i.checked; saveSettings(s); } },
-    { label: 'Hiện thời tiết', type: 'checkbox', checked: weatherOn(), click: (i) => { const s = loadSettings(); s.weather = i.checked; saveSettings(s); refreshWeather(); } },
-    { label: 'Khởi động cùng Windows', type: 'checkbox', checked: autostartEnabled(), click: (i) => setAutostart(i.checked) },
-    { type: 'separator' },
-    { label: 'Khởi động lại', click: () => { app.relaunch(); app.quit(); } },
-    { label: 'Mở nhật ký lỗi', click: () => shell.showItemInFolder(path.join(userDir(), 'log.txt')) },
-    { label: 'Thoát (Ctrl+Alt+Q)', click: () => app.quit() },
+    { label: 'Thoát Notchy', accelerator: 'Ctrl+Alt+Q', click: () => app.quit() },
   ]);
 }
-// Mục chọn màn hình: chỉ hiện khi có từ 2 màn hình
-function displayMenu() {
-  const all = screen.getAllDisplays();
-  if (all.length < 2) return [];
-  const cur = targetDisplay(), primary = screen.getPrimaryDisplay();
-  return [{ label: 'Màn hình', submenu: all.map((d, i) => ({
-    label: displayName(d, i) + (d.id === primary.id ? ' · chính' : ''), type: 'radio', checked: d.id === cur.id,
-    click: () => {
-      const s = loadSettings(); s.display = { id: d.id, label: d.label || '' }; saveSettings(s);
-      placeWindow(); refreshTrayMenu();
-      peekUntil = Date.now() + 2500; // hiện viên thuốc một lúc ở màn hình mới cho dễ thấy
-    },
-  })) }];
+function refreshTrayMenu() {
+  try { if (tray) tray.setContextMenu(buildMenu()); } catch (e) { log('tray menu:', e.message); }
+  settingsWin.pushSettings();
 }
-function refreshTrayMenu() { try { if (tray) tray.setContextMenu(buildMenu()); } catch (e) { log('tray menu:', e.message); } }
 // Windows 11 hay giấu icon mới trong mũi tên ^; đặt cờ "luôn hiện" cho icon của app
 function promoteTray() {
   if (process.platform !== 'win32') return;
@@ -790,12 +356,11 @@ function buildTray() {
   try {
     tray = new Tray(trayImage());
     // Đổi sáng/tối trong Windows: đổi icon theo
-    try { require('electron').nativeTheme.on('updated', () => { try { if (tray && !tray.isDestroyed()) tray.setImage(trayImage()); } catch (e) { log('tray theme:', e.message); } }); } catch (_) {}
+    nativeTheme.on('updated', () => { try { if (tray && !tray.isDestroyed()) tray.setImage(trayImage()); } catch (e) { log('tray theme:', e.message); } });
     tray.setToolTip('Notchy');
     refreshTrayMenu();
-    const show = () => { userHidden = false; updateVisibility(); peek(); refreshTrayMenu(); };
-    tray.on('click', show);
-    tray.on('double-click', show);
+    tray.on('click', () => { setUserHidden(false); peek(); });
+    tray.on('double-click', () => settingsWin.openSettings()); // bấm đúp icon khay: mở Cài đặt
     log('tray created, bounds:', JSON.stringify(tray.getBounds()));
     promoteTray();
   } catch (e) { log('tray error:', e && e.stack ? e.stack : e); }
@@ -804,34 +369,39 @@ function buildTray() {
 // ---------- Khởi động ----------
 function start() {
   log('start v' + app.getVersion(), 'exec:', process.execPath);
+  Object.assign(core.hooks, { peek, peekFor, refreshTrayMenu, trayImage });
+  settingsWin.init({
+    hide: () => ({ ...hide }), setHide, reloadHide: loadHideSettings,
+    hotkey: hotkeyInfo, registerHotkey,
+    isUserHidden: () => userHidden, setUserHidden,
+    placeWindow, targetDisplay, displayName,
+    debug: () => ({ covered, tabUnder, fullUnder, fsHidden }),
+  });
+  for (const m of [stats, weather, clip, shelf]) m.registerIpc();
   loadHideSettings();
-  loadClip();
-  loadShelf();
-  lastClipText = clipList.length ? clipList[0].text : '';
+  clip.start();
   createWindow();
   buildTray();
   startMedia();
-  setupUpdater();
-  startStats(); // ghi nền lịch sử CPU/RAM/GPU/mạng cho tab Hệ thống
-  refreshWeather();
-  pruneThumbs(); setInterval(pruneThumbs, 3600 * 1000); // ảnh bìa đệm: xóa ảnh quá 1 ngày
+  updater.setup();
+  stats.startStats(); // ghi nền lịch sử CPU/RAM/GPU/mạng cho tab Hệ thống
+  weather.refreshWeather();
+  thumbs.pruneThumbs(); setInterval(thumbs.pruneThumbs, 3600 * 1000); // ảnh bìa đệm: xóa ảnh quá 1 ngày
   // Máy thức dậy sau khi ngủ: cập nhật thời tiết ngay (dữ liệu cũ có thể đã lâu)
-  try { require('electron').powerMonitor.on('resume', () => setTimeout(refreshWeather, 5000)); } catch (_) {}
-  watchDownloads();
-  watchScreenshots();
+  require('electron').powerMonitor.on('resume', () => setTimeout(weather.refreshWeather, 5000));
+  shelf.start();
   setInterval(pollCursor, 50);
-  setInterval(pollClipboard, 700);
-  setInterval(flushClip, 2000);
   globalShortcut.register('Control+Alt+Q', () => app.quit());
+  registerHotkey();
   const s = loadSettings();
-  if (s.autostart === undefined) setAutostart(true);
+  if (s.autostart === undefined) core.setAutostart(true);
   // Tính năng AI thời tiết đã bỏ: xóa khóa API và tin đã lưu (nếu có) khỏi cài đặt
   if ('aiKeyEnc' in s || 'aiKey' in s || 'aiNews' in s) {
     const s2 = loadSettings(); delete s2.aiKeyEnc; delete s2.aiKey; delete s2.aiNews; saveSettings(s2);
   }
 }
 
-// ---------- Giao tiếp với giao diện ----------
+// ---------- Giao tiếp với viên thuốc (phần còn lại nằm trong các module lib/) ----------
 ipcMain.on('island-size', (_e, s) => {
   if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
     island = { w: s.w, h: s.h };
@@ -843,11 +413,6 @@ ipcMain.on('media-cmd', (_e, cmd) => {
   if (typeof cmd !== 'string' || !/^(play_pause|next|prev|shuffle|focus|seek:\d+(\.\d+)?)$/.test(cmd)) return;
   writeProc(mediaProc, cmd);
 });
-ipcMain.on('sys-cmd', (_e, cmd) => {
-  if (typeof cmd !== 'string' || !/^(get|devices|mute|vol:[01](\.\d+)?|dev:[\w\-.{}]{1,200})$/.test(cmd)) return;
-  ensureSys();
-  writeProc(sysProc, cmd);
-});
 ipcMain.on('alert', (_e, on) => { alerting = !!on; updateVisibility(); });
 ipcMain.on('hold', (_e, on) => { holding = !!on; });
 ipcMain.on('typing', (_e, on) => {
@@ -858,41 +423,7 @@ ipcMain.on('typing', (_e, on) => {
     else { win.blur(); win.setFocusable(false); }
   } catch (_) {}
 });
-ipcMain.on('clip-get', () => send('clip', clipList));
-// Bấm một mục: chỉ chép vào clipboard (không tự dán). Giữ nguyên thứ tự danh sách (lastClipText để vòng
-// theo dõi clipboard không coi đây là nội dung mới).
-ipcMain.on('clip-copy', (_e, id) => {
-  const it = clipList.find((x) => x.id === id);
-  if (!it) return;
-  lastClipText = it.text;
-  clipboard.writeText(it.text);
-});
-ipcMain.on('clip-pin', (_e, id) => { const it = clipList.find((x) => x.id === id); if (it) { it.pin = !it.pin; clipChanged(); } });
-ipcMain.on('clip-del', (_e, id) => { clipList = clipList.filter((x) => x.id !== id); clipChanged(); });
-ipcMain.on('clip-clear', () => { clipList = clipList.filter((x) => x.pin); clipChanged(); });
+ipcMain.on('kb-close', () => setKbOpen(false));
 ipcMain.on('menu', () => { try { buildMenu().popup({ window: win }); } catch (e) { log('menu:', e.message); } });
 ipcMain.on('open-sound', () => { shell.openExternal('ms-settings:sound').catch(() => {}); });
-ipcMain.on('shelf-get', () => sendShelf());
-ipcMain.on('shelf-add', (_e, paths) => {
-  if (!Array.isArray(paths)) return;
-  for (const p of paths.slice(0, 50)) {
-    if (typeof p !== 'string' || !path.isAbsolute(p) || !exists(p) || shelf.some((x) => x.path === p)) continue;
-    shelf.unshift({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), path: p });
-  }
-  shelf = shelf.slice(0, 40);
-  saveShelf(); sendShelf();
-});
-ipcMain.on('shelf-del', (_e, id) => { shelf = shelf.filter((x) => x.id !== id); saveShelf(); sendShelf(); });
-ipcMain.on('shelf-clear', () => { shelf = []; saveShelf(); sendShelf(); });
-ipcMain.on('shelf-open', (_e, id) => { const it = shelf.find((x) => x.id === id); if (it && exists(it.path)) shell.showItemInFolder(it.path); });
-ipcMain.on('shelf-drag', (e, id) => {
-  const it = shelf.find((x) => x.id === id);
-  if (!it || !exists(it.path)) return;
-  let icon = null;
-  try { const c = iconCache.get(it.path); if (c) icon = nativeImage.createFromDataURL(c); } catch (_) {}
-  if (!icon || icon.isEmpty()) icon = trayImage();
-  try { e.sender.startDrag({ file: it.path, icon }); } catch (err) { log('shelf drag:', err.message); }
-});
-ipcMain.on('notice', () => { peekUntil = Date.now() + 4200; });
-ipcMain.on('stats', (_e, on) => setStatsLive(on));
-ipcMain.on('weather-get', () => send('weather', weather.data));
+ipcMain.on('notice', () => { peekFor(4200); });

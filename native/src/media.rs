@@ -8,6 +8,7 @@
 //   {"type":"tabs","value":bool}                          có tab (thanh tab trình duyệt...) nằm ngay dưới viên thuốc
 //   {"type":"fs","value":bool}                            game / ứng dụng Direct3D toàn màn hình
 //   {"type":"full","value":bool}                          cửa sổ dưới viên thuốc đang toàn màn hình (video, trình chiếu...)
+//   {"type":"lbtn","value":bool}                          chuột trái đang được giữ (đang kéo thả tệp...)
 //   {"type":"error","msg":..}
 // Vào (stdin), mỗi dòng một lệnh:
 //   play_pause | next | prev | shuffle | seek:<giây> | focus | paste | probe:<x>:<y>[;<x>:<y>...]
@@ -219,6 +220,25 @@ fn tabbed_class(c: &str) -> bool {
 }
 // Luồng dò tab: nhận (hwnd, x0, x1, y), hwnd = 0 nghĩa là không có cửa sổ có tab bên dưới.
 // Chạy riêng để UI Automation chậm (trình duyệt vừa bật trợ năng...) không làm đứng cập nhật nhạc.
+// Theo dõi nút chuột trái (25 lần/giây, luồng riêng): báo khi bấm / thả. App dùng để biết người dùng đang kéo
+// thứ gì đó (tệp từ Explorer...) tới viên thuốc, kể cả khi viên thuốc đang thu thành vạch và không nhận chuột.
+fn spawn_button_watch() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    std::thread::spawn(|| {
+        let mut last = false;
+        loop {
+            // Nút chính có thể là nút phải nếu người dùng đổi tay trái: GetAsyncKeyState theo nút vật lý,
+            // VK_LBUTTON (0x01) luôn là nút chính theo tài liệu Windows
+            let down = unsafe { GetAsyncKeyState(0x01) } as u16 & 0x8000 != 0;
+            if down != last {
+                last = down;
+                emit(json!({ "type": "lbtn", "value": down }));
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+    });
+}
+
 fn spawn_tab_worker() -> mpsc::SyncSender<(isize, i32, i32, i32)> {
     let (tx, rx) = mpsc::sync_channel::<(isize, i32, i32, i32)>(1);
     std::thread::spawn(move || {
@@ -442,6 +462,18 @@ fn fg_fullscreen() -> bool {
     }
 }
 
+// Phần tử đang nhận bàn phím (UI Automation) là ô nhập chữ
+fn focus_is_text() -> bool {
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+    use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, UIA_ComboBoxControlTypeId, UIA_EditControlTypeId};
+    unsafe {
+        let Ok(uia) = CoCreateInstance::<_, IUIAutomation>(&CUIAutomation, None, CLSCTX_INPROC_SERVER) else { return false };
+        let Ok(el) = uia.GetFocusedElement() else { return false };
+        let ct = el.CurrentControlType().unwrap_or_default();
+        ct == UIA_EditControlTypeId || ct == UIA_ComboBoxControlTypeId
+    }
+}
+
 // YouTube trên trình duyệt không đăng ký "bài sau / bài trước" với Windows khi phát video lẻ (ngoài danh sách phát).
 // Dùng phím tắt của chính YouTube: tạm chọn tab YouTube đang phát, gửi Shift+N (bài sau) / Shift+P (bài trước),
 // rồi trả lại tab đang xem và cửa sổ đang dùng. Bỏ qua khi đang ở game / ứng dụng toàn màn hình.
@@ -484,11 +516,18 @@ fn yt_skip(aumid: &str, title: &str, vk: u8) -> bool {
         }
         bring_front(t.win);
         std::thread::sleep(Duration::from_millis(160));
-        keybd_event(0x10, 0, KEYBD_EVENT_FLAGS(0), 0); // Shift
-        keybd_event(vk, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(vk, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0);
-        std::thread::sleep(Duration::from_millis(140));
+        // Con trỏ đang ở ô nhập chữ (thanh địa chỉ, ô tìm kiếm YouTube, ô bình luận...): Shift+N sẽ gõ chữ "N"
+        // vào đó thay vì chuyển bài -> không gửi phím, chỉ trả lại tab / cửa sổ như cũ
+        let typing = focus_is_text();
+        if typing {
+            log_err("yt: con tro dang o o nhap chu, khong gui phim chuyen bai");
+        } else {
+            keybd_event(0x10, 0, KEYBD_EVENT_FLAGS(0), 0); // Shift
+            keybd_event(vk, 0, KEYBD_EVENT_FLAGS(0), 0);
+            keybd_event(vk, 0, KEYEVENTF_KEYUP, 0);
+            keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0);
+            std::thread::sleep(Duration::from_millis(140));
+        }
         if let Some(oi) = old_tab.filter(|&oi| oi != ti) {
             if let Some(op) = pat(&tabs[oi].el) {
                 let _ = op.Select();
@@ -623,14 +662,18 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
     let shuffle = pb.IsShuffleActive().and_then(|r| r.Value()).unwrap_or(false);
     let status = status_name(pb.PlaybackStatus()?.0);
 
+    // Livestream / truyền hình trực tiếp:
+    // - YouTube live trên Chromium: thời lượng vô hạn -> EndTime âm
+    // - Kênh HLS (TV360, FPT Play...): thời lượng 2^32 giây (~136 năm) và vị trí là giờ thực (giây Unix)
+    // Không bài hát / video thường nào dài quá 30 ngày.
+    let live = is_live(start, end, pos);
     let mut msg = json!({
         "type": "media", "active": true, "key": key, "title": title, "artist": artist, "album": album,
         "app": app, "status": status,
-        "pos": round2((pos - start) as f64 / 1e7),
-        "dur": if end > start { round2((end - start) as f64 / 1e7) } else { 0.0 },
+        "pos": if live { 0.0 } else { round2((pos - start) as f64 / 1e7) },
+        "dur": if !live && end > start { round2((end - start) as f64 / 1e7) } else { 0.0 },
         "upd": upd, "rate": rate, "shuffle": shuffle,
-        // Livestream (YouTube live trên trình duyệt...): Chromium báo thời lượng vô hạn -> EndTime âm
-        "live": end - start < 0,
+        "live": live,
     });
     let key_changed = key != ms.last_key;
     if key_changed {
@@ -759,6 +802,13 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
 }
 
 // "x1:y1;x2:y2;..." -> các điểm dò cửa sổ che (bỏ qua điểm sai định dạng)
+// Livestream (đơn vị 100 ns như Windows báo): thời lượng âm (YouTube live trên Chromium), hoặc thời lượng /
+// vị trí quá 30 ngày (kênh HLS báo 2^32 giây và vị trí là giờ thực)
+fn is_live(start: i64, end: i64, pos: i64) -> bool {
+    const LIVE_MAX: i64 = 30 * 86_400 * 10_000_000;
+    end - start < 0 || end - start > LIVE_MAX || pos - start > LIVE_MAX
+}
+
 fn parse_probe(s: &str) -> Vec<(i32, i32)> {
     s.split(';')
         .filter_map(|p| {
@@ -909,6 +959,7 @@ fn main() {
     let mut probe: Vec<(i32, i32)> = Vec::new();
     let mut last_cover: Option<bool> = None;
     let tab_tx = spawn_tab_worker();
+    spawn_button_watch();
     let mut next_tabs = Instant::now();
     let mut last_fs: Option<bool> = None;
     let mut d3d = false; // game Direct3D toàn màn hình
@@ -1007,5 +1058,37 @@ fn main() {
             }
             next_fs = now + Duration::from_millis(1600);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_points() {
+        assert_eq!(parse_probe("1200:20;1280:20;1360:20"), vec![(1200, 20), (1280, 20), (1360, 20)]);
+        assert_eq!(parse_probe("-5:3; x:1;7:abc;9:9"), vec![(-5, 3), (9, 9)]); // bỏ điểm sai định dạng
+        assert!(parse_probe("").is_empty());
+    }
+
+    #[test]
+    fn tab_names() {
+        assert_eq!(clean_tab_name("(41) ON TRỘM BẮN CS2 - YouTube - Audio playing"), "ON TRỘM BẮN CS2");
+        assert_eq!(clean_tab_name("Lofi mix - YouTube"), "Lofi mix");
+        assert_eq!(clean_tab_name("(1) Facebook"), "Facebook");
+        assert_eq!(clean_tab_name("(2020) Phim hay"), "Phim hay");
+        assert_eq!(clean_tab_name("(remix) Bài hát"), "(remix) Bài hát"); // ngoặc không phải số thông báo: giữ
+        assert_eq!(clean_tab_name("TV360+ 12 - Đang phát âm thanh"), "TV360+ 12");
+    }
+
+    #[test]
+    fn live_detection() {
+        let s = 10_000_000; // 1 giây
+        assert!(!is_live(0, 200 * s, 30 * s), "bài hát 200 giây");
+        assert!(!is_live(0, 3 * 3600 * s, 3600 * s), "video 3 giờ");
+        assert!(is_live(0, -1, 0), "YouTube live: thời lượng âm");
+        assert!(is_live(0, 4_294_967_296 * s, 1_794_159_712 * s), "kênh HLS: 2^32 giây, vị trí giờ thực");
+        assert!(is_live(0, 0, 1_794_159_712 * s), "chỉ vị trí là giờ thực");
     }
 }

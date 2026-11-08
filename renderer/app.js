@@ -95,7 +95,22 @@
   let wxH = 0; // chiều cao nội dung tab Thời tiết (đo sau khi vẽ) để viên thuốc mở vừa khít
   const wxHs = { full: 0, compact: 0 }; // đo sẵn cả hai chế độ để đổi qua lại không phải đo giữa lúc đang chuyển động
   let closeTimer = null, peekTimer = null;
-  const TAB_RESET = 60000; // thu gọn quá 1 phút: lần mở sau về lại tab Nhạc
+  // Cửa sổ Cài đặt gửi sang: trang mặc định, thời gian rời viên thuốc thì quay về trang đó (giây, 0 = không), bật/tắt từng loại thông báo
+  S.prefs = { defaultTab: 'music', tabReset: 60, notify: {}, tabsHidden: [], tempUnit: 'C', clipPaused: false };
+  let prefsInit = false;
+  api.onPrefs((p) => {
+    if (!p) return;
+    const unitChanged = p.tempUnit !== S.prefs.tempUnit, pauseChanged = p.clipPaused !== S.prefs.clipPaused;
+    S.prefs = Object.assign(S.prefs, p);
+    // Ẩn bớt tab trên thanh icon; đang xem tab vừa bị ẩn thì về trang mặc định
+    const hid = S.prefs.tabsHidden || [];
+    $$('.tb').forEach((b) => { b.hidden = hid.includes(b.dataset.tab); });
+    if (prefsInit && hid.includes(S.tab)) setTab(S.prefs.defaultTab);
+    if (unitChanged) { compactSig = ''; renderCompact(); renderWeather(); }
+    if (pauseChanged) renderClip();
+    // Lần đầu (mở app): vào thẳng trang mặc định
+    if (!prefsInit) { prefsInit = true; if (S.tab !== S.prefs.defaultTab && !S.hover) setTab(S.prefs.defaultTab); }
+  });
   let leftAt = 0;          // lúc viên thuốc thu gọn lần cuối
 
   const hasMusic = () => !!(S.media.active && S.media.title && (S.media.status === 'Playing' || S.media.status === 'Paused'));
@@ -124,6 +139,9 @@
   // Chỉ nghe khi sóng đang thật sự hiện và đang phát, cửa sổ không ẩn
   const waveWanted = () => !winOff && isPlaying() && !!waveSlot();
 
+  // Kệ tạm dạng lưới: chỉ khi người dùng chọn mở rộng VÀ có từ 4 tệp (ít hơn thì một hàng là đủ).
+  // Chiều cao viên thuốc và class .grid phải dùng chung điều kiện này, lệch nhau là ô ảnh bị cắt.
+  const shelfGrid = () => S.shelfOpen && S.shelf.length > 3;
   function viewH() {
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) + (S.media.override ? 30 : 0) : 168;
@@ -132,7 +150,7 @@
       case 'weather': return 50 + (wxH || 330) + 16;
       case 'clip': return 50 + (clipH || 300) + 12;
       case 'shelf': {
-        if (!S.shelfOpen || !S.shelf.length) return 210;
+        if (!shelfGrid()) return 210; // một hàng (kể cả khi đang chọn mở rộng mà kệ còn ít tệp)
         const rows = Math.min(3, Math.ceil(S.shelf.length / SH_COLS));
         return 114 + rows * SH_ROW + (rows - 1) * 8 + 4;
       }
@@ -149,7 +167,7 @@
     let c = { w: wxFresh() ? 236 : 196, h: 34, r: 17, ear: 9 };
     if (compactMusic()) c = { w: 350, h: 42, r: 20, ear: 10 };
     // Khi ẩn: thanh Home kiểu iPhone (bo tròn hết, cách mép trên 3px; xem CSS)
-    if (S.hidden) return { mode: 'hidden', w: 100, h: 4, r: 2, ear: 0 };
+    if (S.hidden) return { mode: 'hidden', w: 100, h: 4, r: 40, ear: 0 };
     return Object.assign(c, { mode: 'compact' });
   }
   function applyLayout() {
@@ -160,7 +178,9 @@
     island.dataset.mode = t.mode;
     island.style.width = t.w + 'px';
     island.style.height = t.h + 'px';
-    island.style.borderRadius = `0 0 ${t.r}px ${t.r}px`;
+    // Thu thành vạch: bo lớn cả 4 góc (trình duyệt tự giới hạn theo kích thước, vạch 4px thành viên con nhộng).
+    // Trước đây ép ngay về 2px nên lúc đang co từ bảng lớn trông như một khối vuông.
+    island.style.borderRadius = t.mode === 'hidden' ? `${t.r}px` : `0 0 ${t.r}px ${t.r}px`;
     island.style.setProperty('--ear', t.ear + 'px');
     api.size(t.w, t.h);
     syncWave();
@@ -180,13 +200,28 @@
     S.hoverRaw = v;
     clearTimeout(closeTimer);
     if (v) {
-      if (leftAt && Date.now() - leftAt >= TAB_RESET && S.tab !== 'music') setTab('music');
+      const reset = (S.prefs.tabReset || 0) * 1000, home = S.prefs.defaultTab || 'music';
+      if (reset && leftAt && Date.now() - leftAt >= reset && S.tab !== home) setTab(home);
       leftAt = 0;
       S.hover = true; applyLayout(); requestSys();
     }
     else collapseSoon(380);
   });
   api.onHidden((v) => { S.hidden = !!v; applyLayout(); });
+  // Phím tắt mở viên thuốc: mở bảng đầy đủ dù chuột không ở đó; Esc / bấm lại phím tắt để đóng.
+  // Không rê chuột vào trong 10 giây thì tự đóng.
+  let kbTimer;
+  api.onKbOpen((v) => {
+    clearTimeout(kbTimer);
+    if (v) {
+      clearTimeout(closeTimer);
+      const reset = (S.prefs.tabReset || 0) * 1000, home = S.prefs.defaultTab || 'music';
+      if (reset && leftAt && Date.now() - leftAt >= reset && S.tab !== home) setTab(home);
+      leftAt = 0;
+      S.hover = true; S.open = true; applyLayout(); requestSys();
+      kbTimer = setTimeout(() => { if (!S.hoverRaw) api.kbClose(); }, 10000);
+    } else if (!S.hoverRaw) collapseSoon(0);
+  });
   api.onWinVis((v) => { winOff = !v; document.documentElement.classList.toggle('win-off', winOff); syncWave(); syncStats(); });
   api.onPeek(() => {
     S.peek = true; applyLayout();
@@ -440,135 +475,66 @@
     if (code >= 51 && code <= 82) return WX.rain;
     return WX.cloud;
   }
-  const WX_NAME = (c) => (c <= 1 ? 'Trời quang' : c === 2 ? 'Ít mây' : c === 3 ? 'Nhiều mây' : c === 45 || c === 48 ? 'Sương mù'
-    : c >= 95 ? 'Dông' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'Tuyết' : c >= 80 ? 'Mưa rào' : c >= 61 ? 'Mưa' : c >= 51 ? 'Mưa phùn' : 'Nhiều mây');
   // Dữ liệu quá 2 giờ (mất mạng lâu) thì không hiện ở viên thuốc, tránh hiện thời tiết cũ
   const wxFresh = () => !!(S.weather && Date.now() - S.weather.at < 2 * 3600000);
-  const VN_DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
   /* ================= Tab Thời tiết: hiện tại · lưu ý · 7 ngày ================= */
-  const dayOf = (d) => new Date(d.date + 'T00:00');
-  const rnd = (v) => (v == null ? '–' : Math.round(v));
-  const feelHi = (d) => (d.fhi != null ? d.fhi : d.hi);
-  const feelLo = (d) => (d.flo != null ? d.flo : d.lo);
-  function wxDayName(D, i, long) {
-    if (i === 0) return long ? 'hôm nay' : 'Hôm nay';
-    if (i === 1 && long) return 'ngày mai';
-    const t = dayOf(D[i]);
-    return long ? `${VN_DOW[t.getDay()]} ${t.getDate()}/${t.getMonth() + 1}` : VN_DOW[t.getDay()];
-  }
   const TIP_ICON = {
     wear: L('<path d="M9 4 4.5 6.4l1.7 3.6 1.8-.8V20h8V9.2l1.8.8 1.7-3.6L15 4a3 3 0 0 1-6 0z"/>', 1.8),
     temp: L('<path d="M10 13.8V5.2a2 2 0 0 1 4 0v8.6a3.6 3.6 0 1 1-4 0z"/><path d="M12 9.5v6"/>', 1.8),
     wind: L('<path d="M3 8.5h10.5A2.5 2.5 0 1 0 11 6M3 12.5h15a2.5 2.5 0 1 1-2.5 2.5M3 16.5h7"/>', 1.8),
     ok: L('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 2.2),
   };
-  // Ngưỡng thời tiết cực đoan (mức 1: cam, mức 2: đỏ), theo dự báo từng ngày của Open-Meteo.
-  // null <= 10 là true trong JS nên các phép so sánh "nhỏ hơn" phải kiểm tra thiếu số liệu trước.
-  const avgT = (d) => (d.hi != null && d.lo != null ? (d.hi + d.lo) / 2 : null);
-  const WX_RULES = [
-    // Nóng / rét theo cách gọi của Trung tâm Dự báo KTTV quốc gia: nắng nóng khi cao nhất ≥35°, gay gắt ≥37°;
-    // rét đậm khi nhiệt độ trung bình ngày ≤15°, rét hại ≤13°
-    { k: 'heat', ico: () => WX.sun, test: (d) => (d.hi >= 37 ? 2 : d.hi >= 35 ? 1 : 0), t: ['Nắng nóng', 'Nắng nóng gay gắt'],
-      v: (ds) => `cao nhất ${rnd(Math.max(...ds.map((d) => d.hi)))}°`, a: 'Tránh ra ngoài 11h–16h, uống nhiều nước, che chắn kỹ.' },
-    { k: 'rain', ico: () => WX.rain, test: (d) => (d.rain >= 50 ? 2 : d.rain >= 20 ? 1 : 0), t: ['Mưa to', 'Mưa rất to'],
-      v: (ds) => `tới ${rnd(Math.max(...ds.map((d) => d.rain)))} mm`, a: 'Mang áo mưa, tránh đường hay ngập và vùng dễ sạt lở.' },
-    { k: 'wind', ico: () => TIP_ICON.wind, test: (d) => (d.gust >= 75 ? 2 : d.gust >= 50 ? 1 : 0), t: ['Gió mạnh', 'Gió giật rất mạnh'],
-      v: (ds) => `giật ${rnd(Math.max(...ds.map((d) => d.gust)))} km/h`, a: 'Đi xe máy cẩn thận, tránh cây to, biển quảng cáo.' },
-    { k: 'storm', ico: () => WX.storm, test: (d) => (d.code >= 95 ? 1 : 0), t: ['Có dông sét', 'Có dông sét'], v: () => '',
-      a: 'Không trú dưới cây cao, cột điện; tránh nơi đất trống.' },
-    { k: 'cold', ico: () => TIP_ICON.temp, test: (d) => (avgT(d) == null ? 0 : avgT(d) <= 13 ? 2 : avgT(d) <= 15 ? 1 : 0), t: ['Rét đậm', 'Rét hại'],
-      v: (ds) => `thấp nhất ${rnd(Math.min(...ds.map((d) => d.lo)))}°`, a: 'Giữ ấm cổ, ngực, chân; không sưởi than trong phòng kín.' },
-    { k: 'uv', ico: () => WX.sun, test: (d) => (d.uv >= 11 ? 2 : d.uv >= 8 ? 1 : 0), t: ['Tia UV rất cao', 'Tia UV cực độ'],
-      v: (ds) => `UV ${rnd(Math.max(...ds.map((d) => d.uv)))}`, a: 'Kem chống nắng, mũ rộng vành, kính râm, áo chống nắng.' },
-    { k: 'fog', ico: () => WX.fog, test: (d) => (d.code === 45 || d.code === 48 ? 1 : 0), t: ['Sương mù', 'Sương mù'], v: () => '',
-      a: 'Bật đèn xe, giảm tốc độ, giữ khoảng cách.' },
-  ];
-  const wxDayLevel = (d) => Math.max(0, ...WX_RULES.map((r) => r.test(d)));
-  function wxWear(d) {
-    const hi = feelHi(d), lo = feelLo(d);
-    if (hi == null) return 'Chưa đủ số liệu nhiệt độ.';
-    let s = hi >= 35 ? 'Áo cộc tay mỏng sáng màu, mũ, kem chống nắng'
-      : hi >= 29 ? 'Áo thun, sơ mi mỏng thoáng mát'
-      : hi >= 23 ? 'Áo thun hoặc sơ mi dài tay mỏng'
-      : hi >= 17 ? 'Áo khoác mỏng hoặc áo nỉ, quần dài'
-      : hi >= 11 ? 'Áo len và áo khoác dày, giày kín'
-      : 'Nhiều lớp: áo giữ nhiệt, áo phao, khăn, găng tay';
-    if (d.pop >= 50 || d.rain >= 2) s += ' · mang ô hoặc áo mưa';
-    if (lo != null && hi - lo >= 7 && lo < 22) s += ` · sáng tối ${rnd(lo)}°, thêm áo khoác`;
-    return s + '.';
-  }
-  // Lưu ý: tối đa 3 dòng. Luôn có "mặc gì" (hôm nay; sau 19h là ngày mai) + tối đa 2 điều quan trọng nhất trong:
-  //   - hiện tượng cực đoan hôm nay / ngày mai (mọi mức),
-  //   - những ngày sau trong tuần: chỉ hiện tượng nguy hiểm (mức đỏ) hoặc nhiệt độ đổi đột ngột so với hôm trước.
-  function wxTips(D) {
-    const name = (i) => wxDayName(D, i, true), cand = [];
-    for (const r of WX_RULES) {
-      const near = [0, 1].filter((i) => D[i] && r.test(D[i]));
-      if (near.length) {
-        const lv = Math.max(...near.map((i) => r.test(D[i]))), v = r.v(near.map((i) => D[i]));
-        cand.push({ lv, pri: lv * 10 + 4, ico: r.ico(), title: `${r.t[lv - 1]} ${near.map(name).join(' và ')}${v ? ' · ' + v : ''}`, text: r.a });
-        continue;
-      }
-      const far = D.map((d, i) => (i >= 2 && r.test(d) === 2 ? i : -1)).filter((i) => i >= 0);
-      if (far.length) cand.push({ lv: 2, pri: 18, ico: r.ico(), title: `${r.t[1]} ${name(far[0])}${far.length > 1 ? ' và các ngày sau' : ''} · ${r.v(far.map((i) => D[i]))}`.replace(/ · $/, ''), text: r.a });
-    }
-    // Nhiệt độ trung bình đổi từ 5° trở lên so với hôm trước: lấy ngày đổi mạnh nhất
-    let jump = null;
-    for (let i = 1; i < D.length; i++) {
-      const a = avgT(D[i - 1]), b = avgT(D[i]);
-      if (a == null || b == null) continue;
-      const dt = b - a;
-      if (Math.abs(dt) >= 5 && (!jump || Math.abs(dt) > Math.abs(jump.dt))) jump = { i, dt };
-    }
-    if (jump) {
-      const d = D[jump.i], lv = Math.abs(jump.dt) >= 8 ? 2 : 1, down = jump.dt < 0;
-      cand.push({ lv, pri: lv * 10 + 2, ico: TIP_ICON.temp,
-        title: `${down ? 'Trời chuyển lạnh' : 'Nóng lên đột ngột'} ${name(jump.i)} · ${down ? 'giảm' : 'tăng'} ${rnd(Math.abs(jump.dt))}°`,
-        text: `Nhiệt độ ${rnd(d.lo)}–${rnd(d.hi)}°. ${down ? 'Chuẩn bị áo ấm, giữ ấm khi ra ngoài.' : 'Mặc thoáng, uống đủ nước.'}` });
-    }
-    cand.sort((x, y) => y.pri - x.pri);
-    const top = cand.slice(0, 2);
-    const wi = new Date().getHours() >= 19 && D[1] ? 1 : 0;
-    const wear = { lv: 'wear', ico: TIP_ICON.wear, title: `Mặc gì ${name(wi)}`, text: wxWear(D[wi]) };
-    if (!top.length) return [wear, { lv: 'ok', ico: TIP_ICON.ok, title: 'Tuần này thời tiết ổn định', text: 'Không có nắng nóng, mưa to, gió mạnh hay rét đậm.' }];
-    // Cảnh báo đỏ lên đầu, rồi mặc gì, rồi cảnh báo cam
-    return [...top.filter((t) => t.lv === 2), wear, ...top.filter((t) => t.lv !== 2)];
-  }
+  // Logic thời tiết (renderer/wx-logic.js, có test): tên, mức cảnh báo, mặc gì, lưu ý; đổi °C/°F theo Cài đặt
+  const WXL = WxLogic.create({
+    icons: { sun: WX.sun, rain: WX.rain, storm: WX.storm, fog: WX.fog, wear: TIP_ICON.wear, temp: TIP_ICON.temp, wind: TIP_ICON.wind, ok: TIP_ICON.ok },
+    unit: () => S.prefs.tempUnit,
+  });
+  const { WX_NAME, VN_DOW, rnd, tU, wxDayName, wxDayLevel, wxTips } = WXL;
 
   function renderWeather() {
     const wrap = $('#wxWrap');
     if (!wrap) return;
-    const w = S.weather, D = w && Array.isArray(w.daily) ? w.daily.slice(0, 7) : [];
+    // Nhiều địa điểm: trang Thời tiết xem địa điểm đang chọn (mặc định là địa điểm chính), viên thuốc thu gọn luôn dùng địa điểm chính
+    const all = (S.weather && S.weather.places) || [];
+    const w = all.find((p) => p.id === S.wxPlace) || S.weather, D = w && Array.isArray(w.daily) ? w.daily.slice(0, 7) : [];
     if (!w || !D.length) {
-      wrap.innerHTML = `<div class="empty wx-empty">${WX.cloud}<b>Chưa có dữ liệu thời tiết</b><span>Cần kết nối mạng. Nếu đã tắt, bật lại "Hiện thời tiết" trong menu chuột phải.</span></div>`;
+      wrap.innerHTML = S.weather && S.weather.needLoc
+        ? `<div class="empty wx-empty">${WX.cloud}<b>Không xác định được vị trí của bạn</b><span>Chọn một địa điểm để xem thời tiết.</span><button class="wx-pick" data-act="wx-pick">Chọn địa điểm</button></div>`
+        : `<div class="empty wx-empty">${WX.cloud}<b>Chưa có dữ liệu thời tiết</b><span>Cần kết nối mạng. Notchy sẽ tự thử lại sau vài phút.</span></div>`;
     } else {
-      const meta = [w.feels != null ? `Cảm giác ${rnd(w.feels)}°` : '', w.hum != null ? `Ẩm ${rnd(w.hum)}%` : '', w.wind != null ? `Gió ${rnd(w.wind)} km/h` : ''].filter(Boolean).join(' · ');
+      const meta = [w.feels != null ? `Cảm giác ${rnd(tU(w.feels))}°` : '', w.hum != null ? `Ẩm ${rnd(w.hum)}%` : '', w.wind != null ? `Gió ${rnd(w.wind)} km/h` : ''].filter(Boolean).join(' · ');
       const now = `
         <div class="wx-now">
           <span class="wx-ic wxa">${wxIcon(w.code, w.day)}</span>
-          <b class="wx-t">${rnd(w.temp)}°</b>
-          <div class="wx-cd"><b>${WX_NAME(w.code)}</b><span>Cao ${rnd(w.hi)}° · Thấp ${rnd(w.lo)}°</span><span>${meta}</span></div>
-          <div class="wx-loc"><b>${esc(w.city || 'Vị trí của bạn')}</b><span>Cập nhật ${fmtClock(new Date(w.at))}</span></div>
+          <b class="wx-t">${rnd(tU(w.temp))}°</b>
+          <div class="wx-cd"><b>${WX_NAME(w.code)}</b><span>Cao ${rnd(tU(w.hi))}° · Thấp ${rnd(tU(w.lo))}°</span><span>${meta}</span></div>
+          <div class="wx-loc" data-act="wx-pick" title="Đổi / thêm địa điểm"><b>${esc(w.city || 'Vị trí của bạn')}</b><span>Cập nhật ${fmtClock(new Date(w.at))}</span></div>
         </div>`;
       const tips = wxTips(D).map((t) => `
         <div class="wx-tip lv-${t.lv}" title="${esc(t.title + '\n' + t.text)}"><span class="ti">${t.ico}</span>
           <div class="tx"><b>${esc(t.title)}</b><span>${esc(t.text)}</span></div></div>`);
       const week = D.map((d, i) => {
         const lv = wxDayLevel(d);
-        const tip = [WX_NAME(d.code), `${rnd(d.lo)}–${rnd(d.hi)}°C`, d.pop != null ? `Khả năng mưa ${rnd(d.pop)}%` : '', d.rain ? `Lượng mưa ${d.rain.toFixed(1)} mm` : '', d.gust != null ? `Gió giật ${rnd(d.gust)} km/h` : '', d.uv != null ? `UV ${rnd(d.uv)}` : ''].filter(Boolean).join('\n');
+        const tip = [WX_NAME(d.code), `${rnd(tU(d.lo))}–${rnd(tU(d.hi))}°${S.prefs.tempUnit === 'F' ? 'F' : 'C'}`, d.pop != null ? `Khả năng mưa ${rnd(d.pop)}%` : '', d.rain ? `Lượng mưa ${d.rain.toFixed(1)} mm` : '', d.gust != null ? `Gió giật ${rnd(d.gust)} km/h` : '', d.uv != null ? `UV ${rnd(d.uv)}` : ''].filter(Boolean).join('\n');
         return `<div class="wx-d wxa ${i === 0 ? 'today' : ''} ${lv ? 'lv' + lv : ''}" title="${esc(tip)}">
           <span>${wxDayName(D, i)}</span>${wxIcon(d.code, true)}
-          <b>${rnd(d.hi)}°</b><small>${rnd(d.lo)}°</small>
+          <b>${rnd(tU(d.hi))}°</b><small>${rnd(tU(d.lo))}°</small>
           <em class="${d.pop >= 20 ? '' : 'none'}">${rnd(d.pop)}%</em></div>`;
       }).join('');
       // Lưu ý đầu tiên (quan trọng nhất) luôn hiện; các lưu ý còn lại nằm trong .wx-more, mở ra khi phóng to
       const tl = tips;
       const btn = `<button class="cal-exp" data-act="wx-exp" id="wxExp" title="${S.wxOpen ? 'Thu gọn' : 'Xem đầy đủ'}">${S.wxOpen ? ICON.collapse : ICON.expand}</button>`;
-      wrap.innerHTML = `${now}<div class="wx-tips">${tl[0] || ''}<div class="wx-more"><div>${tl.slice(1).join('')}</div></div></div>`
+      const WX_HERE = '<svg class="here" viewBox="0 0 24 24" fill="currentColor"><path d="M3 11 21 3l-8 18-2-8z"/></svg>';
+      // Hàng chọn địa điểm (từ 2 địa điểm) + nút thêm địa điểm (mở Cài đặt)
+      const chips = all.length > 1 ? `<div class="wx-places">${all.map((p) => `<button class="wx-pl ${p.id === w.id ? 'on' : ''}" data-act="wx-place" data-id="${esc(p.id)}" title="${esc(p.name)}">${p.auto ? WX_HERE : ''}<span>${esc(p.name)}</span><b>${rnd(tU(p.temp))}°</b></button>`).join('')}<button class="wx-pl add" data-act="wx-pick" title="Thêm / sửa địa điểm">+</button></div>` : '';
+      wrap.innerHTML = `${chips}${now}<div class="wx-tips">${tl[0] || ''}<div class="wx-more"><div>${tl.slice(1).join('')}</div></div></div>`
         + `<div class="wx-sec"><span>Dự báo 7 ngày</span>${btn}</div><div class="wx-week">${week}</div>`;
     }
     // Đo cả hai chế độ (tắt chuyển động trong lúc đo), rồi trả về chế độ đang chọn
+    // Chip địa điểm đang xem luôn nằm trong vùng nhìn thấy
+    const pl = wrap.querySelector('.wx-places'), on = pl && pl.querySelector('.wx-pl.on');
+    if (on) pl.scrollLeft = Math.max(0, Math.min(on.offsetLeft - 8, on.offsetLeft + on.offsetWidth - pl.clientWidth + 40));
     wrap.classList.add('nt');
     wrap.classList.add('full'); wxHs.full = wrap.offsetHeight;
     wrap.classList.remove('full'); wxHs.compact = wrap.offsetHeight;
@@ -587,7 +553,12 @@
     wxH = S.wxOpen ? wxHs.full : wxHs.compact;
     applyLayout();
   }
-  api.onWeather((w) => { S.weather = w || null; compactSig = ''; renderCompact(); renderWeather(); applyLayout(); });
+  api.onWeather((w) => {
+    S.weather = w || null;
+    // Địa điểm đang xem bị xóa: quay về địa điểm chính
+    if (S.wxPlace && !((w && w.places) || []).some((p) => p.id === S.wxPlace)) S.wxPlace = null;
+    compactSig = ''; renderCompact(); renderWeather(); applyLayout();
+  });
   api.weatherGet();
 
   /* ================= Thu gọn ================= */
@@ -610,7 +581,7 @@
         compactSig = sig;
         cl.innerHTML = `<span class="c-date">${date}</span>`;
         cr.innerHTML = w
-          ? `<span class="c-wx" title="${esc([w.city, WX_NAME(w.code), w.hi != null ? `Cao ${Math.round(w.hi)}° · Thấp ${Math.round(w.lo)}°` : ''].filter(Boolean).join(' · '))}">${wxIcon(w.code, w.day)}<b>${Math.round(w.temp)}°</b></span>`
+          ? `<span class="c-wx" title="${esc([w.city, WX_NAME(w.code), w.hi != null ? `Cao ${Math.round(tU(w.hi))}° · Thấp ${Math.round(tU(w.lo))}°` : ''].filter(Boolean).join(' · '))}">${wxIcon(w.code, w.day)}<b>${Math.round(tU(w.temp))}°</b></span>`
           : '';
       }
       return;
@@ -1075,10 +1046,14 @@
     const short = (t) => esc(t.replace(/\s+/g, ' ').trim().slice(0, 160));
     $('#clipPins').innerHTML = items.filter((x) => x.pin).slice(0, 6).map((x) => `<button class="pin-chip" data-act="clip-copy" data-id="${x.id}"><span>${short(x.text)}</span></button>`).join('');
     const list = $('#clipList');
-    if (!items.length) list.innerHTML = `<div class="clip-empty">${q ? 'Không có kết quả' : 'Chưa có gì. Hãy sao chép một đoạn văn bản bất kỳ.'}</div>`;
+    // Tạm dừng ghi: dải báo trên đầu danh sách + nút bật lại
+    const paused = S.prefs.clipPaused ? `<div class="clip-paused"><span>Đang tạm dừng ghi bảng tạm</span><button data-act="clip-pause">Bật lại</button></div>` : '';
+    $('#clipPauseBtn').classList.toggle('on', !!S.prefs.clipPaused);
+    $('#clipPauseBtn').title = S.prefs.clipPaused ? 'Bật lại ghi bảng tạm' : 'Tạm dừng ghi bảng tạm';
+    if (!items.length) list.innerHTML = paused + `<div class="clip-empty">${q ? 'Không có kết quả' : 'Chưa có gì. Hãy sao chép một đoạn văn bản bất kỳ.'}</div>`;
     else {
     const tyIcon = { mail: ICON.mail, link: ICON.link, text: ICON.note };
-    list.innerHTML = items.map((x) => { const ty = clipType(x.text); return `
+    list.innerHTML = paused + items.map((x) => { const ty = clipType(x.text); return `
       <div class="c-item" data-act="clip-copy" data-id="${x.id}">
         <span class="ty ${ty}">${tyIcon[ty]}</span><span class="tx">${short(x.text)}</span>
         <span class="acts"><button class="${x.pin ? 'on' : ''}" data-act="clip-pin" data-id="${x.id}" title="Ghim">${x.pin ? ICON.bookmarkF : ICON.bookmark}</button><button data-act="clip-del" data-id="${x.id}" title="Xóa">${ICON.x}</button></span>
@@ -1100,7 +1075,7 @@
     exp.style.display = S.shelf.length > 3 ? '' : 'none'; // ít tệp thì một hàng là đủ
     exp.innerHTML = S.shelfOpen ? ICON.collapse : ICON.expand;
     exp.title = S.shelfOpen ? 'Thu gọn thành một hàng' : 'Mở rộng thành lưới';
-    el.classList.toggle('grid', S.shelfOpen && S.shelf.length > 3);
+    el.classList.toggle('grid', shelfGrid());
     if (!S.shelf.length) {
       el.innerHTML = `<div class="shelf-drop">${ICON.shelf}<b>Kéo tệp vào đây để giữ tạm</b><span>Cần dùng thì kéo từ đây thả sang ứng dụng khác. Kệ chỉ nhớ đường dẫn, không sao chép hay xóa tệp thật.</span></div>`;
       return;
@@ -1122,6 +1097,8 @@
     dragDepth++;
     document.body.classList.add('dropping');
     if (S.tab !== 'shelf') setTab('shelf');
+    // Đang phát nhạc thì rê vào chỉ phóng to viên thuốc: mở hẳn bảng để thấy Kệ tạm mà thả vào
+    if (!S.open) { S.open = true; applyLayout(); }
   });
   document.addEventListener('dragover', (ev) => { if (!hasFiles(ev)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
   document.addEventListener('dragleave', (ev) => { if (!hasFiles(ev)) return; if (--dragDepth <= 0) endDropUi(); });
@@ -1145,6 +1122,9 @@
   const NOTICE_ICON = { charge: [ICON.bolt, '#30d158'], low: [ICON.battery, '#ff453a'], download: [ICON.download, '#0a84ff'], device: [ICON.headphones, '#ffffff'], shot: [ICON.shelf, '#bf5af2'], update: [ICON.download, '#30d158'] };
   function showNotice(n) {
     if (!n || S.ring) return;
+    // Loại thông báo bị tắt trong Cài đặt (sạc / pin yếu chung nhóm "pin")
+    const group = n.kind === 'charge' || n.kind === 'low' ? 'battery' : n.kind;
+    if (S.prefs.notify && S.prefs.notify[group] === false) return;
     const [ic, col] = NOTICE_ICON[n.kind] || NOTICE_ICON.device;
     // Ảnh chụp màn hình: hiện luôn ảnh thu nhỏ thay cho biểu tượng
     $('#nIcon').innerHTML = n.thumb && /^data:image\//.test(n.thumb) ? `<img src="${esc(n.thumb)}" alt="" />` : ic;
@@ -1351,6 +1331,9 @@
       case 'clip-del': api.clipDel(el.dataset.id); break;
       case 'clip-clear': api.clipClear(); break;
       case 'wx-exp': toggleWx(); break;
+      case 'wx-place': S.wxPlace = el.dataset.id; renderWeather(); break;
+      case 'wx-pick': api.openSettings('weather'); break;
+      case 'clip-pause': api.clipPause(!S.prefs.clipPaused); break;
       case 'shelf-exp': S.shelfOpen = !S.shelfOpen; store.set('shelfOpen', S.shelfOpen); renderShelf(); applyLayout(); break;
       case 'clip-q-clear': { const q = $('#clipQ'); q.value = ''; S.clipQ = ''; $('#clipQx').classList.remove('on'); renderClip(); break; }
       // Chuông
@@ -1370,7 +1353,7 @@
 
   // Lăn chuột dọc để cuộn ngang: danh sách thiết bị phát, Kệ tạm
   document.addEventListener('wheel', (ev) => {
-    const chips = ev.target.closest('.out-chips, .shelf-list:not(.grid)');
+    const chips = ev.target.closest('.out-chips, .shelf-list:not(.grid), .wx-places');
     if (chips) {
       ev.preventDefault();
       const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
@@ -1443,6 +1426,7 @@
   $('#calPrev').innerHTML = ICON.left;
   $('#calNext').innerHTML = ICON.right;
   $('#clipClearBtn').innerHTML = ICON.minusCircle;
+  $('#clipPauseBtn').innerHTML = ICON.pause;
   $('#shelfClearBtn').innerHTML = ICON.minusCircle;
   $('#clipQx').innerHTML = ICON.xCircle;
   $('#noteAddBtn').innerHTML = ICON.plus;

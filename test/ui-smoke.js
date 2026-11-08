@@ -1,0 +1,122 @@
+// Kiểm thử giao diện (cửa sổ ẩn, không đụng tới cài đặt / dữ liệu thật): mở viên thuốc và cửa sổ Cài đặt với
+// dữ liệu giả, đi qua các trang / mục, bắt mọi lỗi JavaScript và kiểm tra vài phần tử quan trọng.
+// Chạy: npm run test:ui   (thoát với mã 1 nếu có lỗi)
+const { app, BrowserWindow } = require('electron');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const FIX = path.join(__dirname, 'fixtures');
+const failures = [];
+const fail = (m) => { failures.push(m); console.log('  ✗', m); };
+const ok = (m) => console.log('  ✓', m);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function open(file, preload, isolated) {
+  const w = new BrowserWindow({
+    width: 820, height: 600, show: false,
+    webPreferences: { preload: path.join(FIX, preload), contextIsolation: isolated, sandbox: false, offscreen: true },
+  });
+  const errors = [];
+  w.webContents.on('console-message', (_e, level, msg) => { if (level >= 3) errors.push(msg); });
+  w.webContents.on('preload-error', (_e, p, err) => errors.push('preload: ' + err.message));
+  // settings.html đổi #mục ngay khi mở (history.replaceState) làm lệnh chờ tải bị hủy (ERR_FAILED / ERR_ABORTED)
+  // dù trang vẫn chạy bình thường: bỏ qua lỗi đó, chờ thêm rồi kiểm tra trang đã có nội dung
+  await w.loadFile(path.join(ROOT, 'renderer', file)).catch((e) => { if (!/ERR_(FAILED|ABORTED)/.test(e.message)) throw e; });
+  await wait(700);
+  const run = (js) => w.webContents.executeJavaScript(js);
+  return { w, run, errors };
+}
+
+const D = (date, code, hi, lo) => ({ date, code, hi, lo, fhi: null, flo: null, rain: 0, pop: 10, wind: 10, gust: 20, uv: 5 });
+const place = (id, name, temp) => ({
+  id, name, city: name, temp, code: 2, day: true, feels: temp, hum: 70, wind: 8, hi: temp + 3, lo: temp - 5, at: Date.now(),
+  daily: Array.from({ length: 7 }, (_, i) => D(`2026-11-${String(9 + i).padStart(2, '0')}`, [1, 2, 3, 61, 95, 1, 0][i], temp + 3, temp - 5)),
+});
+
+async function testPill() {
+  console.log('Viên thuốc');
+  const { w, run, errors } = await open('index.html', 'pill-preload.js', false);
+  const cb = (name, v) => run(`window.__cbs.${name}(${JSON.stringify(v)});0`);
+  await cb('onPrefs', { defaultTab: 'music', tabsHidden: ['sys'], tabReset: 60, notify: {}, tempUnit: 'C', clipPaused: true });
+  const places = [place('auto', 'Hà Nội', 22), place('p1', 'Đà Nẵng', 26)];
+  await cb('onWeather', { ...places[0], places, mainId: 'auto' });
+  await cb('onMedia', { type: 'media', active: true, key: 'k', title: 'Bài thử', artist: 'Ca sĩ', app: 'Spotify', status: 'Playing', pos: 10, dur: 200, upd: Date.now(), rate: 1, live: false });
+  await cb('onClip', [{ id: 'c1', text: 'xin chào', pin: false, ts: 1 }, { id: 'c2', text: 'https://example.com', pin: true, ts: 2 }]);
+  await cb('onShelf', [{ id: 's1', name: 'a.png', dir: 'C:/', icon: '', size: 1000, thumb: '' }]);
+  await run("window.__di.S.hover = true; window.__di.S.open = true; window.__di.applyLayout();0");
+  for (const tab of ['music', 'weather', 'calendar', 'clip', 'shelf', 'sys']) {
+    await run(`window.__di.setTab(${JSON.stringify(tab)});0`);
+    await wait(150);
+  }
+  const hiddenTabs = await run("[...document.querySelectorAll('.tb')].filter(b=>b.hidden).map(b=>b.dataset.tab).join(',')");
+  hiddenTabs === 'sys' ? ok('ẩn tab theo cài đặt') : fail('ẩn tab: ' + hiddenTabs);
+  await run("window.__di.setTab('weather');0");
+  const chips = await run("document.querySelectorAll('.wx-pl:not(.add)').length");
+  chips === 2 ? ok('hàng chip 2 địa điểm') : fail('chip địa điểm: ' + chips);
+  const tips = await run("document.querySelectorAll('.wx-tip').length");
+  tips >= 1 && tips <= 3 ? ok(`lưu ý thời tiết (${tips})`) : fail('lưu ý thời tiết: ' + tips);
+  await cb('onPrefs', { tempUnit: 'F' });
+  const tF = await run("document.querySelector('.wx-t').textContent");
+  tF === '72°' ? ok('đổi °F (22°C -> 72°F)') : fail('°F: ' + tF);
+  await run("window.__di.setTab('clip');0");
+  const paused = await run("!!document.querySelector('.clip-paused')");
+  paused ? ok('dải "tạm dừng ghi" bảng tạm') : fail('thiếu dải tạm dừng bảng tạm');
+  // Kệ tạm: đang chọn mở rộng mà chỉ có 1 tệp (vẫn hiện một hàng), rồi 6 tệp (lưới): ô ảnh phải nằm gọn trong viên thuốc
+  const shelfItem = (i) => ({ id: 's' + i, name: i + '.png', dir: 'C:/', icon: '', size: 1000, thumb: '' });
+  await run("window.__di.S.shelfOpen = true;0");
+  for (const n of [1, 6]) {
+    await cb('onShelf', Array.from({ length: n }, (_, i) => shelfItem(i)));
+    await run("window.__di.setTab('shelf');0");
+    await wait(700); // chờ viên thuốc co giãn xong
+    const fit = await run(`(() => { const isl = document.getElementById('island').getBoundingClientRect();
+      const items = [...document.querySelectorAll('#shelfList .sh-item')].slice(0, 5);
+      return items.length && items.every((it) => it.getBoundingClientRect().bottom <= isl.bottom + 0.5); })()`);
+    fit ? ok(`kệ tạm ${n} tệp (chế độ mở rộng) không bị cắt`) : fail(`kệ tạm ${n} tệp bị cắt ô ảnh`);
+  }
+  await run("window.__di.S.shelfOpen = false;0");
+  await cb('onKbOpen', true);
+  const kb = await run('window.__di.S.open && window.__di.S.hover');
+  kb ? ok('mở bằng phím tắt') : fail('phím tắt không mở viên thuốc');
+  await cb('onWeather', { places: [], needLoc: true, at: Date.now() });
+  await run("window.__di.setTab('weather');0");
+  const pick = await run("!!document.querySelector('.wx-pick')");
+  pick ? ok('nút "Chọn địa điểm" khi không đoán được vị trí') : fail('thiếu nút Chọn địa điểm');
+  errors.length ? errors.forEach((e) => fail('lỗi JS viên thuốc: ' + e)) : ok('không có lỗi JavaScript');
+  w.destroy();
+}
+
+async function testSettings() {
+  console.log('Cửa sổ Cài đặt');
+  const { w, run, errors } = await open('settings.html', 'settings-preload.js', false);
+  for (const sec of ['general', 'hide', 'weather', 'notify', 'data', 'about']) {
+    await run(`window.__goto(${JSON.stringify(sec)});0`);
+    await wait(80);
+    const on = await run(`(document.querySelector('.sec.on')||{}).dataset?.sec || ''`);
+    if (on !== sec) fail(`mục ${sec} không mở (đang ${on})`);
+  }
+  ok('mở được 6 mục');
+  const tabs = await run("[...document.querySelectorAll('#tabsPick input')].map(c=>c.checked?1:0).join('')");
+  tabs === '111110' ? ok('ô chọn tab khớp trạng thái') : fail('ô chọn tab: ' + tabs);
+  const rows = await run("document.querySelectorAll('#wxList .place').length");
+  rows === 2 ? ok('danh sách địa điểm (vị trí hiện tại + 1)') : fail('địa điểm: ' + rows);
+  // Đổi vài cài đặt: kiểm tra lệnh gửi đi đúng khóa / giá trị
+  await run(`(function(){
+    const c = document.querySelector('#tabsPick input[value=sys]'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
+    const r = document.querySelector('input[name=hide][value=tabs]'); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true }));
+    const sel = document.querySelector('select[data-key=tempUnit]'); sel.value = 'F'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+  })();0`);
+  await wait(100);
+  const calls = JSON.stringify(await run('window.__calls'));
+  for (const want of ['["set","tabsHidden",[]]', '["set","hideMode","tabs"]', '["set","tempUnit","F"]']) {
+    calls.includes(want) ? ok('gửi ' + want) : fail('thiếu lệnh ' + want + ' trong ' + calls);
+  }
+  errors.length ? errors.forEach((e) => fail('lỗi JS Cài đặt: ' + e)) : ok('không có lỗi JavaScript');
+  w.destroy();
+}
+
+app.on('window-all-closed', () => {}); // đóng cửa sổ viên thuốc xong vẫn chạy tiếp phần Cài đặt
+app.whenReady().then(async () => {
+  try { await testPill(); await testSettings(); } catch (e) { fail('kiểm thử dừng giữa chừng: ' + (e && e.stack || e)); }
+  console.log(failures.length ? `\n${failures.length} lỗi` : '\nTất cả đều ổn');
+  app.exit(failures.length ? 1 : 0);
+});

@@ -1,13 +1,17 @@
 {
   "name": "dynamic-island-windows",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Notchy: viÃªn thuá»‘c tiá»‡n Ã­ch á»Ÿ Ä‘á»‰nh mÃ n hÃ¬nh cho Windows",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "prep-bin": "node scripts/prep-bin.js",
     "dist": "npm run prep-bin && electron-builder --win --publish never",
-    "release": "npm run prep-bin && electron-builder --win --publish always"
+    "release": "npm run prep-bin && electron-builder --win --publish always",
+    "test": "node --test test/",
+    "test:ui": "node test/run-ui.js",
+    "test:rust": "cd native && cargo test --release",
+    "test:all": "npm test && npm run test:ui && npm run test:rust"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -28,12 +32,15 @@
     },
     "files": [
       "main.js",
+      "lib/**",
       "preload.js",
       "renderer/**",
       "assets/**",
       "scripts/*.ps1",
       "bin/**",
-      "package.json"
+      "package.json",
+      "settings-preload.js",
+      "build/icon.png"
     ],
     "win": {
       "target": [

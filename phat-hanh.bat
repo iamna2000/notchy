@@ -32,6 +32,17 @@ pushd native
 if errorlevel 1 ( popd & echo [LOI] Build Rust that bai & pause & exit /b )
 popd
 
+echo.
+echo Chay kiem thu (loi thi dung, khong dang ban loi)...
+call npm test
+if errorlevel 1 ( echo [LOI] Kiem thu that bai & pause & exit /b )
+call npm run test:ui
+if errorlevel 1 ( echo [LOI] Kiem thu giao dien that bai & pause & exit /b )
+pushd native
+"%USERPROFILE%\.cargo\bin\cargo.exe" test --release
+if errorlevel 1 ( popd & echo [LOI] Kiem thu Rust that bai & pause & exit /b )
+popd
+
 call npm version %BUMP% --no-git-tag-version >nul
 for /f "usebackq delims=" %%v in (`node -p "require('./package.json').version"`) do set VER=%%v
 echo Phien ban moi: %VER%

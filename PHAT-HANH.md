@@ -37,3 +37,29 @@ Sau khi cài:
 - Bản cài đặt dùng chung thư mục dữ liệu với bản chạy bằng `chay.bat` (`%APPDATA%\dynamic-island-windows`). Hai bản không chạy cùng lúc được, bản mở sau sẽ tự thoát.
 - Nếu muốn nhận cập nhật tự động như bạn bè, bạn cũng có thể cài bản `.exe` lên máy mình. Khi đó hãy dùng bản cài đặt thay cho `chay.bat`.
 - Nhật ký cập nhật: các dòng `update:` trong `%APPDATA%\dynamic-island-windows\log.txt`.
+
+## Cấu trúc mã nguồn
+
+| Phần | Nằm ở | Việc |
+|---|---|---|
+| Tiến trình chính | `main.js` | Cửa sổ viên thuốc, tự ẩn, phím tắt, cầu nối nhạc, khay hệ thống, khởi động |
+| | `lib/core.js` | Nhật ký, đọc / ghi cài đặt, gửi tin cho viên thuốc |
+| | `lib/prefs.js` | Chuẩn hóa cài đặt (hàm thuần, có test) |
+| | `lib/settings-window.js` | Cửa sổ Cài đặt, khôi phục mặc định, báo lỗi, giới thiệu |
+| | `lib/weather.js`, `clip.js`, `shelf.js`, `stats.js`, `thumbs.js`, `updater.js`, `bridges.js` | Thời tiết, bảng tạm, kệ tạm, tab Hệ thống, ảnh bìa, tự cập nhật, chạy cầu nối |
+| Giao diện | `renderer/app.js` | Viên thuốc |
+| | `renderer/wx-logic.js` | Logic thời tiết: cảnh báo, mặc gì, lưu ý (có test) |
+| | `renderer/settings.*` | Cửa sổ Cài đặt |
+| Cầu nối Rust | `native/src/media.rs` → `di-media.exe` | Nhạc, ảnh bìa, cửa sổ che, tab, toàn màn hình |
+| | `native/src/sys.rs` → `di-sys.exe` | Âm lượng, thiết bị phát, mạng (thay `system.ps1`: khoảng 10 MB thay vì 70 MB RAM) |
+
+Hai script PowerShell `scripts/media.ps1` và `scripts/system.ps1` vẫn được giữ làm dự phòng. Nếu exe Rust thoát ngay 3 lần liền thì app tự dùng lại chúng.
+
+## Kiểm thử
+
+- `npm test`: kiểm thử chuẩn hóa cài đặt và logic thời tiết (chạy trong vài phần mười giây).
+- `npm run test:ui`: mở viên thuốc và cửa sổ Cài đặt ẩn với dữ liệu giả, đi qua mọi trang, báo lỗi JavaScript. Không đụng tới cài đặt thật.
+- `npm run test:rust`: kiểm thử phần Rust (đọc tọa độ dò, làm gọn tên tab, nhận diện livestream).
+- `npm run test:all`: chạy cả ba.
+
+`phat-hanh.bat` tự chạy cả ba trước khi đăng bản mới. Có lỗi thì dừng và không đăng.

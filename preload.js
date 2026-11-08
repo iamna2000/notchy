@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('api', {
   onPeek: (cb) => ipcRenderer.on('peek', () => cb()),
   onShelf: (cb) => on('shelf', cb),
   onToast: (cb) => on('toast', cb),
+  onPrefs: (cb) => on('prefs', cb),
+  onKbOpen: (cb) => on('kbopen', (v) => cb(!!v)),
+  kbClose: () => ipcRenderer.send('kb-close'),
+  clipPause: (v) => ipcRenderer.send('clip-pause', !!v),
   size: (w, h) => ipcRenderer.send('island-size', { w, h }),
   media: (cmd) => ipcRenderer.send('media-cmd', String(cmd)),
   sys: (cmd) => ipcRenderer.send('sys-cmd', String(cmd)),
@@ -38,4 +42,5 @@ contextBridge.exposeInMainWorld('api', {
   notice: () => ipcRenderer.send('notice'),
   menu: () => ipcRenderer.send('menu'),
   openSound: () => ipcRenderer.send('open-sound'),
+  openSettings: (sec) => ipcRenderer.send('open-settings', String(sec || '')),
 });

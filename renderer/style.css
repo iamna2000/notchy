@@ -40,8 +40,10 @@ input::placeholder { color: var(--label3); }
    của trình duyệt. Xám trung tính + viền tối rất mảnh để thấy được trên cả nền sáng lẫn tối;
    đang phát nhạc thì nhuộm màu ảnh bìa */
 .shell { transition: background-color .35s ease; }
-.island[data-mode="hidden"] { border-radius: 2px !important; transform: translateY(3px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .22); }
-.island[data-mode="hidden"] .shell { background: rgba(152, 152, 159, .92); }
+/* Góc bo do app.js đặt (bo lớn cả 4 góc, tự thành viên con nhộng khi chỉ cao 4px); màu vạch chỉ hiện khi đã co
+   gần xong (trễ .35s), để lúc đang co từ bảng lớn vẫn là khối đen bo tròn chứ không phải mảng màu vuông */
+.island[data-mode="hidden"] { transform: translateY(3px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .22); }
+.island[data-mode="hidden"] .shell { background: rgba(152, 152, 159, .92); transition: background-color .3s ease .35s; }
 .island[data-mode="hidden"].playing .shell { background: var(--wave, #c9b8ff); }
 .shell { position: absolute; inset: 0; overflow: hidden; background: #000; border-radius: inherit; }
 .ear { position: absolute; top: 0; width: var(--ear); height: var(--ear); transition: width .8s var(--spring), height .8s var(--spring); }
@@ -510,3 +512,34 @@ body.dropping .sh-item { box-shadow: inset 0 0 0 1.5px var(--blue); }
 .view:not(.on) .wxa svg * { animation-play-state: paused; }
 /* Cả cửa sổ đang ẩn (ẩn từ khay, game toàn màn hình): dừng mọi animation */
 .win-off *, .win-off *::before, .win-off *::after { animation-play-state: paused !important; }
+
+/* Thời tiết nhiều địa điểm: hàng chọn địa điểm, nút chọn địa điểm khi không đoán được vị trí */
+.wx-places { display: flex; gap: 6px; margin: -2px 0 8px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.wx-places::-webkit-scrollbar { display: none; }
+.wx-pl {
+  flex: none; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; border: 0;
+  background: rgba(255, 255, 255, .07); color: rgba(255, 255, 255, .72); font: 500 12px var(--font); cursor: pointer;
+  transition: background .25s cubic-bezier(.32, .72, 0, 1), color .25s;
+}
+.wx-pl:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+.wx-pl.on { background: rgba(255, 255, 255, .92); color: #000; }
+.wx-pl span { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-pl b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wx-pl .here { width: 10px; height: 10px; flex: none; }
+.wx-pl.add { width: 26px; padding: 0; justify-content: center; font-size: 16px; font-weight: 400; }
+.wx-loc { cursor: pointer; border-radius: 8px; transition: opacity .2s; }
+.wx-loc:hover { opacity: .75; }
+.wx-pick {
+  margin-top: 10px; height: 30px; padding: 0 16px; border-radius: 15px; border: 0; cursor: pointer;
+  background: #fff; color: #000; font: 600 12.5px var(--font); transition: transform .15s;
+}
+.wx-pick:active { transform: scale(.96); }
+
+/* Bảng tạm: nút tạm dừng ghi + dải báo đang tạm dừng */
+#clipPauseBtn.on { color: #ff9f0a; background: rgba(255, 159, 10, .16); }
+.clip-paused {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 6px; padding: 7px 8px 7px 12px;
+  border-radius: 10px; background: rgba(255, 159, 10, .12); color: #ffc46b; font-size: 12px; font-weight: 500;
+}
+.clip-paused button { height: 24px; padding: 0 10px; border-radius: 12px; border: 0; background: #ff9f0a; color: #000; font: 600 11.5px var(--font); cursor: pointer; }
+.tb[hidden] { display: none !important; }

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'" />
+<title>Cài đặt Notchy</title>
+<link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+<header class="titlebar"><span class="tb-logo"></span>Cài đặt Notchy</header>
+
+<div class="shell">
+  <nav class="side" id="side">
+    <button data-sec="general"><i data-ic="general"></i>Chung</button>
+    <button data-sec="hide"><i data-ic="hide"></i>Tự ẩn</button>
+    <button data-sec="weather"><i data-ic="weather"></i>Thời tiết</button>
+    <button data-sec="notify"><i data-ic="notify"></i>Thông báo</button>
+    <button data-sec="data"><i data-ic="data"></i>Bảng tạm &amp; Kệ tạm</button>
+    <button data-sec="about"><i data-ic="about"></i>Cập nhật &amp; thông tin<span class="dot" id="updDot"></span></button>
+  </nav>
+
+  <main class="main" id="main">
+
+    <!-- ===== Chung ===== -->
+    <section class="sec" data-sec="general">
+      <h1>Chung</h1>
+      <div class="card">
+        <label class="row">
+          <div class="txt"><b>Khởi động cùng Windows</b><span>Tự chạy Notchy khi bật máy</span></div>
+          <input type="checkbox" class="sw" data-key="autostart" />
+        </label>
+        <label class="row">
+          <div class="txt"><b>Hiện viên thuốc</b><span>Tắt để giấu tạm, bật lại ở đây hoặc chuột phải icon khay</span></div>
+          <input type="checkbox" class="sw" data-key="shown" />
+        </label>
+        <div class="row" id="displayRow">
+          <div class="txt"><b>Màn hình hiển thị</b><span id="displayNote">Viên thuốc nằm ở mép trên màn hình này</span></div>
+          <select data-key="display" id="displaySel"></select>
+        </div>
+      </div>
+
+      <h2>Khi mở viên thuốc</h2>
+      <div class="card">
+        <div class="row">
+          <div class="txt"><b>Trang mặc định</b><span>Trang hiện ra khi mở viên thuốc</span></div>
+          <select data-key="defaultTab">
+            <option value="music">Nhạc</option>
+            <option value="weather">Thời tiết</option>
+            <option value="calendar">Lịch</option>
+            <option value="clip">Bảng tạm</option>
+            <option value="shelf">Kệ tạm</option>
+            <option value="sys">Hệ thống</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="txt"><b>Quay về trang mặc định</b><span>Sau khi rời viên thuốc một lúc; quay lại sớm hơn thì giữ trang đang xem</span></div>
+          <select data-key="tabReset" data-num>
+            <option value="60">Sau 1 phút</option>
+            <option value="300">Sau 5 phút</option>
+            <option value="900">Sau 15 phút</option>
+            <option value="0">Không bao giờ</option>
+          </select>
+        </div>
+        <div class="row col">
+          <div class="txt"><b>Tab hiện trên viên thuốc</b><span>Bỏ chọn tab không dùng cho thanh icon gọn hơn (giữ lại ít nhất 1 tab)</span></div>
+          <div class="tabs-pick" id="tabsPick">
+            <label><input type="checkbox" value="music" /><span>Nhạc</span></label>
+            <label><input type="checkbox" value="weather" /><span>Thời tiết</span></label>
+            <label><input type="checkbox" value="calendar" /><span>Lịch</span></label>
+            <label><input type="checkbox" value="clip" /><span>Bảng tạm</span></label>
+            <label><input type="checkbox" value="shelf" /><span>Kệ tạm</span></label>
+            <label><input type="checkbox" value="sys" /><span>Hệ thống</span></label>
+          </div>
+        </div>
+      </div>
+
+      <h2>Phím tắt</h2>
+      <div class="card">
+        <div class="row">
+          <div class="txt"><b>Mở / đóng viên thuốc</b><span id="hotkeyNote">Mở bảng đầy đủ không cần rê chuột; Esc để đóng</span></div>
+          <select data-key="hotkey" id="hotkeySel">
+            <option value="Control+Alt+Space">Ctrl + Alt + Space</option>
+            <option value="Control+Shift+Space">Ctrl + Shift + Space</option>
+            <option value="Alt+Shift+N">Alt + Shift + N</option>
+            <option value="">Tắt</option>
+          </select>
+        </div>
+        <div class="row"><div class="txt"><b>Thoát Notchy</b></div><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Q</kbd></div>
+        <div class="row"><div class="txt"><b>Mở Cài đặt</b><span>Chuột phải viên thuốc, hoặc bấm đúp icon ở khay hệ thống</span></div></div>
+      </div>
+    </section>
+
+    <!-- ===== Tự ẩn ===== -->
+    <section class="sec" data-sec="hide">
+      <h1>Tự ẩn</h1>
+      <p class="lead">Khi ẩn, viên thuốc thu thành một vạch nhỏ ở mép trên. Đưa chuột lên sát mép trên, ngay giữa màn hình, giữ khoảng 0,3 giây để gọi ra.</p>
+      <div class="card choices" id="hideChoices">
+        <label class="choice"><input type="radio" name="hide" value="off" /><div class="txt"><b>Luôn hiện</b><span>Không bao giờ tự ẩn (trừ khi có ứng dụng toàn màn hình, xem bên dưới)</span></div></label>
+        <label class="choice"><input type="radio" name="hide" value="tabs" /><div class="txt"><b>Ẩn khi che tab trình duyệt</b><span>Hiện liên tục; chỉ ẩn khi đang đè lên một tab của Chrome, Edge, Brave, Cốc Cốc, Firefox hoặc Explorer</span></div></label>
+        <label class="choice"><input type="radio" name="hide" value="window" /><div class="txt"><b>Ẩn khi có cửa sổ bên dưới</b><span>Trên màn hình nền thì hiện; có ứng dụng nằm dưới viên thuốc và không dùng một lúc thì ẩn</span></div>
+          <select data-key="hideDelay" data-num id="delaySel">
+            <option value="0">Ngay lập tức</option>
+            <option value="5">Sau 5 giây</option>
+            <option value="10">Sau 10 giây</option>
+          </select>
+        </label>
+      </div>
+      <div class="card">
+        <label class="row">
+          <div class="txt"><b>Thu thành vạch khi có ứng dụng toàn màn hình</b><span>Xem video toàn màn hình, trình chiếu, game cửa sổ không viền. Áp dụng ở mọi chế độ trên</span></div>
+          <input type="checkbox" class="sw" data-key="fullBar" />
+        </label>
+      </div>
+      <p class="note">Game Direct3D toàn màn hình độc quyền luôn ẩn hẳn. Nhắc ghi chú đổ chuông luôn hiện.</p>
+    </section>
+
+    <!-- ===== Thời tiết ===== -->
+    <section class="sec" data-sec="weather">
+      <h1>Thời tiết</h1>
+      <p class="lead">Thêm nhiều địa điểm và chuyển qua lại ở trang Thời tiết của viên thuốc. Địa điểm <b>chính</b> hiện nhiệt độ ngay trên viên thuốc khi không phát nhạc.</p>
+      <div class="warn" id="wxWarn">Không xác định được vị trí của bạn qua mạng. Hãy thêm một địa điểm bên dưới.</div>
+      <div class="card" id="wxList"></div>
+      <div class="card add-card">
+        <div class="geo on" id="geo">
+          <div class="search"><i data-ic="search"></i><input id="geoIn" placeholder="Thêm địa điểm: nhập tên thành phố, ví dụ Đà Nẵng" spellcheck="false" /></div>
+          <div class="geo-list" id="geoList"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="row">
+          <div class="txt"><b>Đơn vị nhiệt độ</b></div>
+          <select data-key="tempUnit"><option value="C">°C (độ C)</option><option value="F">°F (độ F)</option></select>
+        </div>
+      </div>
+      <p class="note">Dữ liệu từ Open-Meteo (miễn phí), cập nhật mỗi 15 phút. Tối đa <span id="wxMax">8</span> địa điểm. Vị trí hiện tại được đoán bằng cách gửi địa chỉ IP của máy tới ipwho.is (dự phòng ipapi.co); tắt "Vị trí hiện tại" nếu không muốn.</p>
+    </section>
+
+    <!-- ===== Thông báo ===== -->
+    <section class="sec" data-sec="notify">
+      <h1>Thông báo</h1>
+      <p class="lead">Viên thuốc nở ra khoảng 4 giây để báo những việc dưới đây.</p>
+      <div class="card">
+        <label class="row"><i class="ico" data-ic="download" style="--c:#0a84ff"></i><div class="txt"><b>Tải xong tệp</b><span>Tệp mới trong thư mục Downloads</span></div><input type="checkbox" class="sw" data-notify="download" /></label>
+        <label class="row"><i class="ico" data-ic="shot" style="--c:#bf5af2"></i><div class="txt"><b>Ảnh chụp màn hình</b><span>Đã thêm ảnh vừa chụp vào Kệ tạm</span></div><input type="checkbox" class="sw" data-notify="shot" /></label>
+        <label class="row"><i class="ico" data-ic="headphones" style="--c:#ffffff"></i><div class="txt"><b>Thiết bị âm thanh mới</b><span>Cắm tai nghe, kết nối loa Bluetooth</span></div><input type="checkbox" class="sw" data-notify="device" /></label>
+        <label class="row"><i class="ico" data-ic="battery" style="--c:#30d158"></i><div class="txt"><b>Pin</b><span>Cắm sạc, pin còn 20% và 10% (laptop)</span></div><input type="checkbox" class="sw" data-notify="battery" /></label>
+        <label class="row"><i class="ico" data-ic="update" style="--c:#30d158"></i><div class="txt"><b>Có bản cập nhật</b><span>Bản mới đã tải xong, sẵn sàng cài</span></div><input type="checkbox" class="sw" data-notify="update" /></label>
+      </div>
+      <p class="note">Nhắc ghi chú theo giờ (trang Lịch) luôn đổ chuông.</p>
+    </section>
+
+    <!-- ===== Bảng tạm & Kệ tạm ===== -->
+    <section class="sec" data-sec="data">
+      <h1>Bảng tạm &amp; Kệ tạm</h1>
+      <div class="card">
+        <div class="row">
+          <div class="txt"><b>Lịch sử bảng tạm</b><span id="clipInfo"></span></div>
+          <button class="btn danger" data-act="clipClear">Xóa lịch sử</button>
+        </div>
+        <div class="row">
+          <div class="txt"><b>Số mục nhớ</b><span>Không tính mục đã ghim</span></div>
+          <select data-key="clipMax" data-num><option value="20">20 mục</option><option value="50">50 mục</option><option value="100">100 mục</option><option value="200">200 mục</option></select>
+        </div>
+        <label class="row">
+          <div class="txt"><b>Tạm dừng ghi bảng tạm</b><span>Bật khi chép mật khẩu, mã OTP, thông tin riêng. Cũng bật / tắt được ở nút trên trang Bảng tạm</span></div>
+          <input type="checkbox" class="sw" data-key="clipPaused" />
+        </label>
+        <label class="row">
+          <div class="txt"><b>Giữ lịch sử sau khi tắt máy</b><span>Tắt: lịch sử chỉ nằm trong bộ nhớ, mất khi thoát Notchy (mục đã ghim vẫn được giữ)</span></div>
+          <input type="checkbox" class="sw" data-key="clipPersist" />
+        </label>
+        <label class="row">
+          <div class="txt"><b>Ảnh chụp màn hình tự vào Kệ tạm</b><span>Win+Shift+S, PrtScn: ảnh lên đầu kệ, giữ 10 ảnh gần nhất. Cần bật tự lưu ảnh của Snipping Tool</span></div>
+          <input type="checkbox" class="sw" data-key="shelfShots" />
+        </label>
+        <div class="row">
+          <div class="txt"><b>Kệ tạm</b><span id="shelfInfo"></span></div>
+          <button class="btn danger" data-act="shelfClear">Xóa kệ</button>
+        </div>
+      </div>
+      <p class="note">Lịch sử bảng tạm chỉ lưu trên máy này (không gửi đi đâu), dạng văn bản thường. Nội dung trình quản lý mật khẩu đánh dấu là nhạy cảm được tự bỏ qua. Kệ tạm chỉ nhớ đường dẫn, xóa kệ không xóa tệp thật.</p>
+      <h2>Dữ liệu &amp; nhật ký</h2>
+      <div class="card">
+        <div class="row"><div class="txt"><b>Thư mục dữ liệu</b><span>Cài đặt, ghi chú, lịch sử bảng tạm</span></div><button class="btn" data-act="openData">Mở thư mục</button></div>
+        <div class="row"><div class="txt"><b>Nhật ký lỗi</b><span>Gửi file này khi cần báo lỗi</span></div><button class="btn" data-act="openLog">Mở nhật ký</button></div>
+      </div>
+    </section>
+
+    <!-- ===== Cập nhật & thông tin ===== -->
+    <section class="sec" data-sec="about">
+      <h1>Cập nhật &amp; thông tin</h1>
+      <div class="card hero">
+        <img src="../build/icon.png" alt="" class="hero-ico" />
+        <div class="txt"><b class="big">Notchy</b><span id="verLine"></span></div>
+        <div class="upd" id="updBox"></div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="txt"><b>Mã nguồn</b><span>github.com/iamna2000/notchy</span></div><button class="btn" data-act="repo">Mở GitHub</button></div>
+        <div class="row"><div class="txt"><b>Gửi báo lỗi</b><span>Tạo tệp thông tin lỗi ra Desktop (không chứa bảng tạm, ghi chú) và mở trang báo lỗi trên GitHub để đính kèm</span></div><button class="btn" data-act="report">Tạo báo lỗi</button></div>
+        <div class="row"><div class="txt"><b>Khôi phục cài đặt mặc định</b><span>Giữ ghi chú, bảng tạm, kệ tạm và địa điểm thời tiết</span></div><button class="btn danger" data-act="reset">Khôi phục</button></div>
+        <div class="row"><div class="txt"><b>Khởi động lại Notchy</b><span>Khi viên thuốc hoạt động không bình thường</span></div><button class="btn" data-act="restart">Khởi động lại</button></div>
+        <div class="row"><div class="txt"><b>Thoát Notchy</b><span>Tắt hẳn đến lần bật máy sau (nếu đang tự khởi động)</span></div><button class="btn danger" data-act="quit">Thoát</button></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="settings.js"></script>
+</body>
+</html>
