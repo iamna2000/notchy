@@ -556,8 +556,16 @@ function setAutostart(on) {
   try { app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: [app.getAppPath()] }); } catch (e) { log('autostart:', e.message); }
   const s = loadSettings(); s.autostart = on; saveSettings(s);
 }
+// Icon khay đơn sắc như icon hệ thống: trắng trên taskbar tối, đen trên taskbar sáng (theo màu taskbar của Windows)
+function taskbarIsLight() {
+  try {
+    const { nativeTheme } = require('electron');
+    const dark = nativeTheme.shouldUseDarkColorsForSystemIntegratedUI;
+    return dark === undefined ? !nativeTheme.shouldUseDarkColors : !dark;
+  } catch (_) { return false; }
+}
 function trayImage() {
-  for (const f of ['tray.png', 'tray.ico']) {
+  for (const f of [taskbarIsLight() ? 'tray-light.png' : 'tray.png', 'tray.png', 'tray.ico']) {
     try {
       const img = nativeImage.createFromPath(path.join(__dirname, 'assets', f));
       if (!img.isEmpty()) { log('tray image:', f, JSON.stringify(img.getSize())); return img; }
@@ -621,6 +629,8 @@ function promoteTray() {
 function buildTray() {
   try {
     tray = new Tray(trayImage());
+    // Đổi sáng/tối trong Windows: đổi icon theo
+    try { require('electron').nativeTheme.on('updated', () => { try { if (tray && !tray.isDestroyed()) tray.setImage(trayImage()); } catch (e) { log('tray theme:', e.message); } }); } catch (_) {}
     tray.setToolTip('Dynamic Island');
     refreshTrayMenu();
     const show = () => { userHidden = false; updateVisibility(); peek(); refreshTrayMenu(); };
