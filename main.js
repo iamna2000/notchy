@@ -185,10 +185,12 @@ function pollCursor() {
   const wantAuto = due && !alerting && now > peekUntil;
   if (wantAuto) {
     if (!revealed) {
-      const atEdge = p.y <= b.y && dx <= island.w / 2 + 60;
+      // Hiện lại khi đưa chuột lên mép trên HOẶC rê vào vùng thanh Home (10px trên cùng, rộng hơn thanh 2 bên).
+      // Trước đây chỉ tính hàng điểm ảnh trên cùng (y=0) nên rê/bấm thẳng vào thanh (y=3..7) không có tác dụng.
+      const atEdge = p.y <= b.y + 10 && dx <= island.w / 2 + 60;
       if (atEdge) {
         if (!edgeSince) edgeSince = now;
-        if (now - edgeSince >= 280) { revealed = true; leaveSince = 0; }
+        if (now - edgeSince >= 200) { revealed = true; leaveSince = 0; }
       } else edgeSince = 0;
     } else {
       const near = (dx <= island.w / 2 + 20 && p.y <= b.y + island.h + 20) || holding || typing;
