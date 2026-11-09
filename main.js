@@ -146,7 +146,10 @@ function createWindow() {
   win.once('ready-to-show', () => updateVisibility());
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone:', JSON.stringify(d)));
   // giao diện (tải lại) sẵn sàng: gửi lại nhạc + ảnh bìa, cài đặt giao diện, trạng thái tự ẩn (gửi trước khi trang tải xong thì bị mất)
-  win.webContents.on('did-finish-load', () => { resendMedia(); settingsWin.sendPrefs(); if (hiddenNow) send('hidden', true); });
+  win.webContents.on('did-finish-load', () => {
+    resendMedia(); settingsWin.sendPrefs(); if (hiddenNow) send('hidden', true);
+    const u = updater.state(); if (u.state === 'ready') send('update', { version: u.version, notes: u.notes }); // nút Cập nhật
+  });
   win.on('closed', () => { win = null; core.win = null; });
   // backgroundThrottling tắt (để nhắc ghi chú chạy đúng giờ) nên khi cửa sổ ẩn trang vẫn tưởng mình đang hiện
   // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
@@ -427,3 +430,4 @@ ipcMain.on('kb-close', () => setKbOpen(false));
 ipcMain.on('menu', () => { try { buildMenu().popup({ window: win }); } catch (e) { log('menu:', e.message); } });
 ipcMain.on('open-sound', () => { shell.openExternal('ms-settings:sound').catch(() => {}); });
 ipcMain.on('notice', () => { peekFor(4200); });
+ipcMain.on('install-update', () => updater.install());

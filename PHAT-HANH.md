@@ -5,8 +5,9 @@
 
 Bạn bè chỉ cần cài một lần bằng file `Notchy-Setup-x.y.z.exe`. Sau đó app tự kiểm tra bản mới trên GitHub:
 - Lúc mở app và mỗi 4 giờ, app kiểm tra và tự tải ngầm bản mới.
-- Tải xong, viên thuốc báo "Có bản mới x.y.z".
-- Người dùng chuột phải viên thuốc, chọn **Cập nhật lên x.y.z**. Nếu không chọn, bản mới tự cài lúc tắt app hoặc tắt máy.
+- Tải xong, viên thuốc báo "Có bản mới x.y.z" kèm dòng mô tả bạn gõ lúc phát hành ("có gì mới"). Chưa cập nhật thì cứ 6 giờ nhắc lại.
+- Thanh tab của viên thuốc hiện nút **Cập nhật** màu xanh (cạnh bánh răng): bấm là cài và khởi động lại. Cũng cài được từ menu chuột phải hoặc Cài đặt > Giới thiệu. Nếu không bấm, bản mới tự cài lúc tắt app hoặc tắt máy.
+- Bạn bè đang dùng bản 3.3.0 vẫn nhận được bản mới (thông báo kiểu cũ: báo 4 giây + mục trong menu chuột phải); từ bản sau trở đi mới có nút Cập nhật và dòng "có gì mới".
 - Cài đặt, ghi chú và bảng tạm được giữ nguyên qua các lần cập nhật.
 
 ## Mỗi lần ra bản mới
@@ -14,7 +15,7 @@ Bạn bè chỉ cần cài một lần bằng file `Notchy-Setup-x.y.z.exe`. Sau
 1. **Sửa xong code, chạy thử bằng `chay.bat`** như bình thường.
 2. **Bấm đúp `phat-hanh.bat`:**
    - Chọn **1** nếu là sửa lỗi (3.2.0 → 3.2.1), **2** nếu là tính năng mới (3.2.0 → 3.3.0).
-   - Gõ một dòng mô tả ngắn. Bạn bè sẽ thấy dòng này trên trang phát hành.
+   - Gõ một dòng mô tả ngắn. Bạn bè sẽ thấy dòng này trên trang phát hành **và ngay trên viên thuốc** khi có bản mới, nên viết cho người dùng đọc (vd: "Logo mới, Cài đặt dễ dùng hơn, sửa lỗi nhận nhầm Riot Client").
    - Script tự làm các bước còn lại: build cầu nối Rust, tăng số phiên bản, đóng gói, đăng lên GitHub, rồi commit và push.
 
 Máy bạn bè nhận bản mới khi mở lại app, hoặc trong vòng 4 giờ.

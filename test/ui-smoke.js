@@ -111,6 +111,13 @@ async function testPill() {
   await run("window.__di.S.hover = true; window.__di.S.open = true; window.__di.applyLayout(); document.getElementById('tbSet').click();0");
   const setCall = await run("JSON.stringify(window.__calls.filter(c => c[0] === 'openSettings').pop() || null)");
   setCall === '["openSettings",""]' ? ok('bánh răng mở Cài đặt') : fail('bánh răng: ' + setCall);
+  // Có bản mới: nút Cập nhật hiện trên thanh tab, bấm thì gửi lệnh cài
+  const updHidden0 = await run("document.getElementById('tbUpd').hidden");
+  await cb('onUpdate', { version: '9.9.9', notes: 'Sửa lỗi nhạc' });
+  await run("document.getElementById('tbUpd').click();0");
+  const updOk = await run("!document.getElementById('tbUpd').hidden && window.__calls.some(c => c[0] === 'installUpdate')");
+  updHidden0 && updOk ? ok('nút Cập nhật khi có bản mới') : fail('nút Cập nhật: ' + updHidden0 + '/' + updOk);
+  await cb('onUpdate', null);
   const tabOn = await run("getComputedStyle(document.querySelector('.tb.on')).backgroundColor");
   tabOn !== 'rgba(0, 0, 0, 0)' ? ok('tab đang chọn có nền') : fail('tab đang chọn không có nền');
   await cb('onKbOpen', true);

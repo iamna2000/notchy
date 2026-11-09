@@ -569,3 +569,12 @@ body.dropping .sh-item { box-shadow: inset 0 0 0 1.5px var(--blue); }
 @media (prefers-reduced-motion: reduce) {
   .expanded, .compact, .ring-view, .notice-view { filter: none !important; }
 }
+
+/* Có bản mới đã tải xong: nút xanh trên thanh tab (cạnh bánh răng), bấm là cài + khởi động lại */
+.tb-upd {
+  height: 24px; padding: 0 11px; margin: 0 2px; border-radius: 12px; background: var(--green); color: #000;
+  font-size: 12px; font-weight: 600; white-space: nowrap; animation: updIn .5s var(--spring);
+}
+.tb-upd:hover { background: #4cdc71; }
+.tb-upd[hidden] { display: none; }
+@keyframes updIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }

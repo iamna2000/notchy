@@ -246,6 +246,13 @@
   const TB_ICON = { music: ICON.music, sys: ICON.gauge, weather: ICON.weather, clip: ICON.clip, shelf: ICON.shelf };
   $$('.tb').forEach((b) => { if (TB_ICON[b.dataset.tab]) b.innerHTML = TB_ICON[b.dataset.tab]; });
   $('#tbSet').innerHTML = ICON.gear;
+  // Bản mới đã tải xong (lib/updater.js): hiện nút Cập nhật cho tới khi cài
+  api.onUpdate((u) => {
+    const b = $('#tbUpd');
+    b.hidden = !u;
+    if (u) b.title = `Cài bản ${u.version} và khởi động lại Notchy` + (u.notes ? `
+Có gì mới: ${u.notes}` : '');
+  });
   // Thứ tự tab trên thanh icon: trang mới trượt vào từ phía tab được bấm, trang cũ trượt ra phía ngược lại
   const TAB_ORDER = ['music', 'weather', 'calendar', 'clip', 'shelf', 'sys'];
   function setTab(id) {
@@ -1408,6 +1415,7 @@
       case 'dev': api.sys('dev:' + el.dataset.id); S.sys.devices.forEach((d) => { d.def = d.id === el.dataset.id; }); renderOut(); break;
       case 'open-sound': api.openSound(); break;
       case 'open-settings': api.openSettings(''); break;
+      case 'install-update': api.installUpdate(); break;
       // Nước
       // Lịch
       case 'cal-prev': case 'cal-next': {

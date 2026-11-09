@@ -289,3 +289,4 @@ h2.danger-h { color: var(--danger); }
   .sw:not(:checked) { background: #d1d1d6; }
   /* Hình minh họa giữ tông tối như màn hình thật / viên thuốc */
 }
+.upd small.notes { max-width: 260px; line-height: 1.45; }

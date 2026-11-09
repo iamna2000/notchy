@@ -159,7 +159,7 @@
       return;
     }
     const map = {
-      ready: `<button class="btn primary" data-act="installUpdate">Cập nhật lên ${esc(u.version)}</button><small class="ok">Đã tải xong, Notchy sẽ khởi động lại</small>`,
+      ready: `<button class="btn primary" data-act="installUpdate">Cập nhật lên ${esc(u.version)}</button><small class="ok">Đã tải xong, Notchy sẽ khởi động lại</small>${u.notes ? `<small class="notes">Có gì mới: ${esc(u.notes)}</small>` : ''}`,
       downloading: `<div class="prog"><i style="width:${u.percent || 0}%"></i></div><small>Đang tải bản ${esc(u.version)}… ${u.percent || 0}%</small>`,
       checking: '<button class="btn" disabled>Đang kiểm tra…</button>',
       latest: '<button class="btn" data-act="checkUpdate">Kiểm tra cập nhật</button><small class="ok">Đang là bản mới nhất</small>',
