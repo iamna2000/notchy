@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('api', {
   menu: () => ipcRenderer.send('menu'),
   openSound: () => ipcRenderer.send('open-sound'),
   onUpdate: (cb) => on('update', cb),
+  openUrl: (u) => ipcRenderer.send('open-url', String(u || '')),
   installUpdate: () => ipcRenderer.send('install-update'),
   openSettings: (sec) => ipcRenderer.send('open-settings', String(sec || '')),
 });

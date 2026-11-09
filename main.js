@@ -207,10 +207,33 @@ function inDropZone(p, b) {
   return Math.abs(p.x - (b.x + b.width / 2)) <= island.w / 2 + 80 && p.y >= b.y && p.y <= b.y + Math.max(island.h, 40) + 24;
 }
 
+// ---------- Kéo tệp từ Kệ tạm ra ứng dụng khác ----------
+// Kéo thả của hệ thống (webContents.startDrag) dùng chính cửa sổ viên thuốc làm nguồn. ĐỔI setIgnoreMouseEvents
+// TRONG LÚC KÉO LÀ WINDOWS HUỶ PHIÊN KÉO: đã đo bằng chuột thật — pollCursor đổi khi con trỏ rời viên thuốc thì phiên
+// kéo chết sau ~430 ms; đổi ngay trước khi kéo thì startDrag trả về sau 84 ms (tệp "tự thả" dù vẫn giữ chuột).
+// Nên: không đụng tới setIgnoreMouseEvents, đóng băng pollCursor tới khi nhả chuột (di-media báo lbtn): viên thuốc
+// đứng yên, không thu lại. Hạn chế còn lại: không thả được vào phần ứng dụng nằm ngay dưới vùng cửa sổ viên thuốc
+// (640x470 ở giữa mép trên); thả ở chỗ khác bình thường.
+let outDrag = 0;          // lúc bắt đầu kéo ra (0 = không kéo)
+let resyncMouse = false;  // kéo xong: đặt lại setIgnoreMouseEvents theo vị trí chuột thật
+function beginOutDrag() {
+  outDrag = Date.now();
+}
+function outDragActive(now) {
+  if (!outDrag) return false;
+  // Kết thúc khi đã nhả chuột (sau ít nhất 300 ms để kịp nhận trạng thái nút), hoặc quá 2 phút (phòng hờ)
+  if ((!lbDown && now - outDrag > 300) || now - outDrag > 120000) {
+    outDrag = 0; resyncMouse = true;
+    return false;
+  }
+  return true;
+}
+
 // ---------- Theo dõi chuột + tự ẩn (20 lần/giây) ----------
 function pollCursor() {
   if (!win || !win.isVisible()) return;
   const now = Date.now();
+  if (outDragActive(now)) return; // đang kéo tệp ra: giữ nguyên mọi thứ
   const p = screen.getCursorScreenPoint();
   const b = win.getBounds();
   const cx = b.x + b.width / 2;
@@ -252,11 +275,13 @@ function pollCursor() {
     inside = dx <= island.w / 2 + pad && p.y >= b.y && p.y <= b.y + island.h + pad;
     if (holding || dragging) inside = true;
   }
-  if (inside !== hoverNow) {
+  if (inside !== hoverNow || resyncMouse) {
+    resyncMouse = false;
+    const changed = inside !== hoverNow;
     hoverNow = inside;
     if (inside && kbOpen) setKbOpen(false); // rê chuột vào: dùng chuột như thường
     win.setIgnoreMouseEvents(!inside, { forward: true });
-    send('hover', inside);
+    if (changed) send('hover', inside);
   }
 }
 
@@ -372,7 +397,7 @@ function buildTray() {
 // ---------- Khởi động ----------
 function start() {
   log('start v' + app.getVersion(), 'exec:', process.execPath);
-  Object.assign(core.hooks, { peek, peekFor, refreshTrayMenu, trayImage });
+  Object.assign(core.hooks, { peek, peekFor, refreshTrayMenu, trayImage, beginOutDrag });
   settingsWin.init({
     hide: () => ({ ...hide }), setHide, reloadHide: loadHideSettings,
     hotkey: hotkeyInfo, registerHotkey,
@@ -431,3 +456,8 @@ ipcMain.on('menu', () => { try { buildMenu().popup({ window: win }); } catch (e)
 ipcMain.on('open-sound', () => { shell.openExternal('ms-settings:sound').catch(() => {}); });
 ipcMain.on('notice', () => { peekFor(4200); });
 ipcMain.on('install-update', () => updater.install());
+// Liên kết trong ghi chú: chỉ mở http(s) bằng trình duyệt mặc định
+ipcMain.on('open-url', (_e, u) => {
+  if (typeof u !== 'string' || u.length > 2000) return;
+  try { const x = new URL(u); if (x.protocol === 'http:' || x.protocol === 'https:') shell.openExternal(x.href).catch(() => {}); } catch (_) {}
+});

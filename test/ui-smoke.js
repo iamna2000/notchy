@@ -120,6 +120,37 @@ async function testPill() {
   await cb('onUpdate', null);
   const tabOn = await run("getComputedStyle(document.querySelector('.tb.on')).backgroundColor");
   tabOn !== 'rgba(0, 0, 0, 0)' ? ok('tab đang chọn có nền') : fail('tab đang chọn không có nền');
+  // Lịch: khung soạn ghi chú (nội dung · bánh xe giờ · liên kết · nhắc trước), sửa ghi chú, đổ chuông nhắc trước
+  await run("window.__di.setTab('calendar'); window.__di.S.calMonth = false; window.__di.S.notes = {}; window.__di.act('cal-today');0");
+  await run("window.__di.act('nc-open');0");
+  await wait(700);
+  const ncFit = await run(`(() => { const isl = document.getElementById('island').getBoundingClientRect();
+    const r = document.getElementById('ncRem').getBoundingClientRect();
+    return document.querySelector('.view[data-view=calendar]').classList.contains('composing') && r.bottom <= isl.bottom - 4 && r.height > 30; })()`);
+  ncFit ? ok('khung soạn ghi chú mở, nằm gọn trong viên thuốc') : fail('khung soạn ghi chú bị cắt hoặc không mở');
+  // Đặt 21:30 bằng bánh xe, nhắc trước 15 phút, có liên kết
+  await run(`(() => { const d = window.__di; document.getElementById('ncText').value = 'Họp nhóm';
+    document.querySelector('#dH .di[data-i="21"]').click(); document.querySelector('#dM .di[data-i="6"]').click();
+    document.getElementById('ncLink').value = 'example.com/review';
+    d.act('nc-rem'); d.act('nc-rem'); d.act('nc-save'); })();0`);
+  const n1 = await run("JSON.stringify(Object.values(window.__di.S.notes).flat()[0] || null)");
+  const want = '{"t":"Họp nhóm","at":"21:30","pre":15,"link":"https://example.com/review"}';
+  const got = n1 ? JSON.stringify((({ t, at, pre, link }) => ({ t, at, pre, link }))(JSON.parse(n1))) : 'null';
+  got === want ? ok('lưu ghi chú: giờ từ bánh xe, nhắc trước 15 phút, liên kết') : fail('lưu ghi chú: ' + got);
+  const closed = await run("!document.querySelector('.view[data-view=calendar]').classList.contains('composing') && !!document.querySelector('#notes .ev[data-act=note-edit] .lk')");
+  closed ? ok('đóng khung soạn, thẻ ghi chú có nút liên kết') : fail('sau khi lưu: khung không đóng / thiếu nút liên kết');
+  // Sửa: mở lại đúng nội dung, đổi giờ, không nhân đôi ghi chú
+  await run("window.__di.act('note-edit', document.querySelector('#notes .ev[data-act=note-edit]'));0");
+  const edit = await run("document.getElementById('ncText').value + '|' + window.__di.drumTime() + '|' + document.getElementById('ncRemTxt').textContent");
+  await run("document.querySelector('#dH .di[data-i=\"22\"]').click(); window.__di.act('nc-save');0");
+  const after = await run("JSON.stringify(Object.values(window.__di.S.notes).flat().map(n => n.at))");
+  edit === 'Họp nhóm|21:30|Trước 15 phút' && after === '["22:30"]' ? ok('sửa ghi chú (mở đúng nội dung, đổi giờ, không nhân đôi)') : fail('sửa ghi chú: ' + edit + ' / ' + after);
+  // Nhắc trước 15 phút: đổ chuông lúc 22:15 của ngày đó, kèm nút mở liên kết
+  await run(`(() => { const d = window.__di, t = new Date(); t.setHours(22, 15, 0, 0);
+    const realNow = Date.now; Date.now = () => t.getTime() + 5000; d.setLastTick(t.getTime() - 60000); d.checkNotes(); Date.now = realNow; })();0`);
+  const rang = await run("(window.__di.S.ring ? window.__di.S.ring.title + '|' + window.__di.S.ring.sub : 'none') + '|' + !document.getElementById('ringLink').hidden");
+  rang === 'Họp nhóm|22:30 · còn 15 phút|true' ? ok('đổ chuông nhắc trước 15 phút, có nút mở liên kết') : fail('đổ chuông nhắc trước: ' + rang);
+  await run("window.__di.stopRing(); window.__di.endNotice(); window.__di.S.notes = {};0");
   await cb('onKbOpen', true);
   const kb = await run('window.__di.S.open && window.__di.S.hover');
   kb ? ok('mở bằng phím tắt') : fail('phím tắt không mở viên thuốc');

@@ -65,10 +65,29 @@
             <div id="calBody"></div>
             <div class="dt-head" id="dtHead"></div>
             <div class="notes" id="notes"></div>
-            <div class="note-add">
-              <input class="field" id="noteIn" maxlength="80" placeholder="Thêm ghi chú…" spellcheck="false" />
-              <input class="field time" id="noteAt" type="time" title="Giờ nhắc (không bắt buộc)" />
-              <button class="sq" data-act="note-add" id="noteAddBtn"></button>
+            <!-- Thu gọn: một nút; bấm thì khung soạn ghi chú trượt mở -->
+            <div class="note-add" id="noteAdd">
+              <button class="na-open" data-act="nc-open"><i id="ncPlus"></i><span>Thêm ghi chú…</span></button>
+            </div>
+            <!-- Khung soạn / sửa ghi chú: nội dung · bánh xe giờ · Lưu / Huỷ, dưới là liên kết + nhắc trước -->
+            <div class="nc" id="nc">
+              <div><div class="nc-grid">
+                <label class="nc-text-w"><span class="sr">Nội dung ghi chú</span><textarea class="nc-text" id="ncText" maxlength="200" placeholder="Nội dung ghi chú" spellcheck="false"></textarea></label>
+                <div class="drum" id="drum" aria-label="Giờ nhắc">
+                  <div class="dcol" id="dH" data-seg="h" role="listbox" aria-label="Giờ"></div>
+                  <span class="dsep">:</span>
+                  <div class="dcol" id="dM" data-seg="m" role="listbox" aria-label="Phút"></div>
+                </div>
+                <div class="nc-btns">
+                  <button class="nc-save" data-act="nc-save" id="ncSave">Lưu</button>
+                  <button class="nc-cancel" data-act="nc-cancel">Huỷ</button>
+                </div>
+                <label class="nc-link"><i id="ncLinkIco"></i><span class="sr">Liên kết</span><input id="ncLink" placeholder="Liên kết (không bắt buộc)" spellcheck="false" maxlength="500" /></label>
+                <div class="nc-rem" id="ncRem">
+                  <button class="nc-rem-main" data-act="nc-rem" id="ncRemBtn" title="Đổi thời điểm nhắc"><i id="ncRemIco"></i><span id="ncRemTxt">Đúng giờ</span></button>
+                  <button class="nc-rem-x" data-act="nc-rem-off" id="ncRemX" aria-label="Không nhắc"></button>
+                </div>
+              </div></div>
             </div>
           </section>
 
@@ -119,6 +138,7 @@
         </div>
         <div class="ring-actions">
           <button class="pbtn tint" id="ringSnooze" data-act="ring-snooze">Báo lại sau 5 phút</button>
+          <button class="pbtn tint" id="ringLink" data-act="ring-link" hidden>Mở liên kết</button>
           <button class="pbtn light" id="ringStop" data-act="ring-stop">Xong</button>
         </div>
       </div>

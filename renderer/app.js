@@ -144,7 +144,7 @@
     switch (S.tab) {
       case 'music': return hasMusic() ? (S.outOpen ? 316 : 226) + (S.media.override ? 30 : 0) : 168;
       case 'sys': return 302;
-      case 'calendar': return S.calMonth ? 368 : 264 + Math.min(3, calEvents()) * 46;
+      case 'calendar': return S.calMonth ? 368 : S.nc && S.nc.open ? 378 : 264 + Math.min(3, calEvents()) * 46;
       case 'weather': return 50 + (wxH || 330) + 16;
       case 'clip': return 50 + (clipH || 300) + 12;
       case 'shelf': {
@@ -1057,7 +1057,8 @@ Có gì mới: ${u.notes}` : '');
   function renderNotes(animate) {
     const sel = S.sel, when = `${WD_FULL[sel.getDay()]}, ${sel.getDate()} tháng ${sel.getMonth() + 1}`;
     const hol = holidaysOf(sel).map((h) => `<div class="ev ${h.off ? 'red' : 'blue'}"><div class="ev-t"><b>${esc(h.name)}</b><span>${h.lunar ? 'Lễ âm lịch' : 'Ngày lễ'}</span></div></div>`).join('');
-    const notes = notesOf(sel).map((n) => `<div class="ev orange"><div class="ev-t"><b>${esc(n.t)}</b><span>${n.at ? n.at + ' · ' : ''}${when}</span></div><button data-act="note-del" data-id="${n.id}" aria-label="Xóa">${ICON.x}</button></div>`).join('');
+    const sub = (n) => [n.at ? n.at + (n.pre > 0 ? ` · nhắc trước ${n.pre === 60 ? '1 giờ' : n.pre + ' phút'}` : n.pre < 0 ? ' · không nhắc' : '') : when, n.link ? linkHost(n.link) : ''].filter(Boolean).join(' · ');
+    const notes = notesOf(sel).map((n) => `<div class="ev orange" data-act="note-edit" data-id="${n.id}" title="Bấm để sửa"><div class="ev-t"><b>${esc(n.t.replace(/\s*\n\s*/g, ' · '))}</b><span>${esc(sub(n))}</span></div>${n.link ? `<button class="lk" data-act="note-link" data-id="${n.id}" aria-label="Mở liên kết" title="${esc(n.link)}">${ICON.link}</button>` : ''}<button data-act="note-del" data-id="${n.id}" aria-label="Xóa">${ICON.x}</button></div>`).join('');
     const box = $('#notes'), html = hol + notes;
     if (box.innerHTML === html) return;
     box.innerHTML = html;
@@ -1066,15 +1067,137 @@ Có gì mới: ${u.notes}` : '');
   }
   // Số sự kiện hiện ở chế độ tuần (để tính chiều cao bảng)
   const calEvents = () => holidaysOf(S.sel).length + notesOf(S.sel).length;
-  function addNote() {
-    const inp = $('#noteIn'), at = $('#noteAt');
-    const t = inp.value.trim();
-    if (!t) return;
+
+  /* ----- Khung soạn / sửa ghi chú: nội dung · bánh xe giờ · Lưu / Huỷ · liên kết · nhắc trước ----- */
+  // Ghi chú: { id, t, at: 'HH:MM' | '', pre: phút nhắc trước (0 = đúng giờ, -1 = không nhắc), link }
+  const REM_OPTS = [0, 5, 15, 30, 60];
+  const remLabel = (p) => (p < 0 ? 'Không nhắc' : p === 0 ? 'Đúng giờ' : p === 60 ? 'Trước 1 giờ' : `Trước ${p} phút`);
+  const HOURS = Array.from({ length: 24 }, (_, i) => i), MINS = Array.from({ length: 12 }, (_, i) => i * 5);
+  const ROW = 20; // chiều cao một ô của bánh xe (khớp CSS .di)
+  S.nc = { open: false, edit: null, day: '', rem: 0 };
+  const isTodaySel = () => S.sel.getTime() === today0().getTime();
+
+  // ---- Bánh xe ----
+  function drumBuild(col, vals) {
+    col.innerHTML = vals.map((v, i) => `<div class="di" data-i="${i}" role="option">${pad(v)}</div>`).join('');
+    col.tabIndex = 0;
+    let raf = 0, idle = 0;
+    col.addEventListener('scroll', () => {
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; drumMark(col, drumIdx(col)); });
+      clearTimeout(idle);
+      idle = setTimeout(() => { delete col.dataset.t; }, 160); // cuộn xong: mốc đích về lại vị trí thật
+    }, { passive: true });
+    // Lăn chuột: mỗi nấc một ô (cuộn mặc định nhảy ~5 ô); bàn di chuột: cộng dồn rồi mới nhảy
+    let acc = 0;
+    col.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const d = ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY;
+      if (Math.abs(d) >= 50) { acc = 0; drumStep(col, Math.sign(d)); return; }
+      acc += d;
+      if (Math.abs(acc) >= 40) { drumStep(col, Math.sign(acc)); acc = 0; }
+    }, { passive: false });
+    col.addEventListener('click', (ev) => { const it = ev.target.closest('.di'); if (it) drumGo(col, Number(it.dataset.i), true); });
+    col.addEventListener('keydown', (ev) => {
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); drumStep(col, ev.key === 'ArrowDown' ? 1 : -1); }
+    });
+  }
+  const drumIdx = (col) => clamp(Math.round(col.scrollTop / ROW), 0, col.children.length - 1);
+  const drumCur = (col) => (col.dataset.t != null ? Number(col.dataset.t) : drumIdx(col));
+  function drumMark(col, i) {
+    if (col._on === i) return;
+    col._on = i;
+    [...col.children].forEach((c, k) => { c.classList.toggle('on', k === i); c.setAttribute('aria-selected', String(k === i)); });
+  }
+  function drumGo(col, i, smooth) {
+    i = clamp(i, 0, col.children.length - 1);
+    col.dataset.t = i;
+    col.scrollTo({ top: i * ROW, behavior: smooth && !reduceMotion.matches ? 'smooth' : 'auto' });
+    drumMark(col, i);
+  }
+  const drumStep = (col, d) => drumGo(col, drumCur(col) + d, true);
+  drumBuild($('#dH'), HOURS);
+  drumBuild($('#dM'), MINS);
+  function drumSet(h, m) {
+    drumGo($('#dH'), h, false);
+    drumGo($('#dM'), Math.min(11, Math.round(m / 5)), false);
+  }
+  const drumTime = () => `${pad(HOURS[drumCur($('#dH'))])}:${pad(MINS[drumCur($('#dM'))])}`;
+
+  // ---- Nhắc trước ----
+  function renderRem() {
+    $('#ncRemTxt').textContent = remLabel(S.nc.rem);
+    $('#ncRem').classList.toggle('off', S.nc.rem < 0);
+    $('#ncRemBtn').title = S.nc.rem < 0 ? 'Bật nhắc' : 'Đổi thời điểm nhắc';
+  }
+  function nextRem() {
+    const i = REM_OPTS.indexOf(S.nc.rem);
+    S.nc.rem = i < 0 ? 0 : REM_OPTS[(i + 1) % REM_OPTS.length];
+    renderRem();
+    anim($('#ncRemTxt'), [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], 220);
+  }
+
+  // Liên kết: thêm https:// nếu thiếu; chỉ nhận http(s) có tên miền
+  function normLink(s) {
+    s = String(s || '').trim();
+    if (!s) return '';
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    try { const u = new URL(s); return /^https?:$/.test(u.protocol) && u.hostname.includes('.') ? u.href : ''; } catch (_) { return ''; }
+  }
+  const linkHost = (h) => { try { return new URL(h).hostname.replace(/^www\./, ''); } catch (_) { return ''; } };
+
+  // Đưa bàn phím vào một ô (cửa sổ viên thuốc không nhận focus sẵn; xem phần "Gõ chữ" bên dưới)
+  function focusField(el) {
+    pendingInput = el;
+    beginTyping();
+    el.focus();
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) {}
+  }
+
+  // ---- Mở / đóng / lưu ----
+  function ncOpen(note) {
+    S.nc = { open: true, edit: note ? note.id : null, day: ymd(S.sel), rem: note ? (note.pre != null ? note.pre : note.at ? 0 : -1) : 0 };
+    $('#ncText').value = note ? note.t : '';
+    $('#ncLink').value = note && note.link ? note.link : '';
+    let h = 8, m = 0;
+    if (note && /^\d\d:\d\d$/.test(note.at || '')) [h, m] = note.at.split(':').map(Number);
+    else if (isTodaySel()) { const n = new Date(Date.now() + 15 * 60000), q = Math.ceil(n.getMinutes() / 15) * 15; h = (n.getHours() + (q === 60 ? 1 : 0)) % 24; m = q % 60; }
+    drumSet(h, m);
+    renderRem();
+    $('#ncSave').textContent = note ? 'Lưu' : 'Thêm';
+    // Chuyển cảnh nối tiếp: danh sách + nút "Thêm ghi chú" mờ dần ra trước, rồi khung soạn trượt vào
+    // (trước đây danh sách biến mất ngay, để lại một nhịp trống trước khi khung soạn hiện)
+    const view = $('.view[data-view="calendar"]');
+    const show = () => { if (!S.nc.open) return; view.classList.add('composing'); applyLayout(); focusField($('#ncText')); };
+    if (reduceMotion.matches || view.classList.contains('composing')) { show(); return; }
+    [$('#notes'), $('#noteAdd')].forEach((el) => anim(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-4px)' }], 170));
+    setTimeout(show, 100); // ẩn hẳn trước khi hiệu ứng mờ (170 ms, không giữ trạng thái cuối) kết thúc
+  }
+  function ncClose() {
+    if (!S.nc.open) return;
+    S.nc.open = false;
+    $('.view[data-view="calendar"]').classList.remove('composing');
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('#nc')) a.blur();
+    renderNotes(true);
+    applyLayout();
+  }
+  function ncSave() {
+    const t = $('#ncText').value.replace(/[ \t]+\n/g, '\n').trim();
+    if (!t) { anim($('#ncText'), [{ transform: 'none' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(-3px)' }, { transform: 'none' }], 320); focusField($('#ncText')); return; }
+    const raw = $('#ncLink').value.trim(), link = normLink(raw);
+    if (raw && !link) { anim($('.nc-link'), [{ transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], 260); focusField($('#ncLink')); return; }
+    const note = { id: S.nc.edit || 'n' + Date.now().toString(36), t, at: drumTime(), pre: S.nc.rem };
+    if (link) note.link = link;
+    // Sửa: bỏ bản cũ ở ngày cũ (có thể đã chuyển sang ngày khác trong lúc soạn)
+    if (S.nc.edit && S.notes[S.nc.day]) {
+      S.notes[S.nc.day] = S.notes[S.nc.day].filter((x) => x.id !== S.nc.edit);
+      if (!S.notes[S.nc.day].length) delete S.notes[S.nc.day];
+    }
     const key = ymd(S.sel);
-    (S.notes[key] = S.notes[key] || []).push({ id: 'n' + Date.now().toString(36), t, at: at.value || '' });
+    (S.notes[key] = S.notes[key] || []).push(note);
     S.notes[key].sort((a, b) => (a.at || '99:99').localeCompare(b.at || '99:99'));
     saveNotes();
-    inp.value = ''; at.value = '';
+    ncClose();
     renderCalendar();
   }
 
@@ -1286,6 +1409,7 @@ Có gì mới: ${u.notes}` : '');
     $('#ringTitle').textContent = r.title;
     $('#ringSub').textContent = r.sub || '';
     $('#ringIcon').innerHTML = ICON.bell;
+    $('#ringLink').hidden = !r.link;
     clearTimeout(ringTimeout);
     ringTimeout = setTimeout(() => stopRing(), 60000);
     api.alert(true);
@@ -1307,7 +1431,7 @@ Có gì mới: ${u.notes}` : '');
     const r = S.ring;
     if (!r) return;
     const at = Date.now() + SNOOZE_MIN * 60000;
-    S.snooze.push({ at, title: r.title, sub: r.orig || r.sub || '' });
+    S.snooze.push({ at, title: r.title, sub: r.orig || r.sub || '', link: r.link || '' });
     store.set('snooze', S.snooze);
     // Xác nhận hiện ngay sau khi tắt chuông (trước các thông báo đang chờ)
     noticeQueue.unshift({ kind: 'snooze', title: 'Sẽ nhắc lại lúc ' + fmtClock(new Date(at)), sub: r.title });
@@ -1320,19 +1444,37 @@ Có gì mới: ${u.notes}` : '');
     S.snooze = S.snooze.filter((x) => x !== due);
     store.set('snooze', S.snooze);
     // Máy ngủ / tắt app quá giờ báo lại: vẫn nhắc (ghi "trễ") để không mất việc
-    startRing({ kind: 'note', title: due.title, sub: (now - due.at > 120000 ? 'Báo lại (trễ) · ' : 'Báo lại · ') + due.sub, orig: due.sub });
+    startRing({ kind: 'note', title: due.title, sub: (now - due.at > 120000 ? 'Báo lại (trễ) · ' : 'Báo lại · ') + due.sub, orig: due.sub, link: due.link || '' });
   }
 
   /* ================= Nhắc ghi chú theo giờ (có bù khi máy ngủ dậy) ================= */
   let lastTick = Date.now();
+  // Phút (tính từ 1970) lúc phải đổ chuông của một ghi chú thuộc ngày day; null nếu không nhắc
+  function ringMinute(day, n) {
+    if (!/^\d\d:\d\d$/.test(n.at || '')) return null;
+    const pre = n.pre == null ? 0 : n.pre;
+    if (pre < 0) return null;
+    const [h, m] = n.at.split(':').map(Number);
+    return Math.floor(new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m).getTime() / 60000) - pre;
+  }
   function checkNotes() {
     const now = Date.now();
     let from = Math.floor(lastTick / 60000) + 1;
     const to = Math.floor(now / 60000);
     if (to - from > 15) from = to - 15;
-    for (let mn = from; mn <= to; mn++) {
-      const d = new Date(mn * 60000), hhmm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      for (const n of S.notes[ymd(d)] || []) if (n.at === hhmm) startRing({ kind: 'note', title: n.t, sub: 'Ghi chú · ' + hhmm });
+    if (to >= from) {
+      // Nhắc trước tối đa 60 phút: ghi chú có thể thuộc ngày của mốc "to + 60 phút" (qua nửa đêm)
+      const days = new Map();
+      for (const t of [from, to, to + 60]) {
+        const d = new Date(t * 60000), k = ymd(d);
+        if (!days.has(k)) days.set(k, new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+      }
+      for (const [k, day] of days) for (const n of S.notes[k] || []) {
+        const r = ringMinute(day, n);
+        if (r == null || r < from || r > to) continue;
+        const pre = n.pre || 0;
+        startRing({ kind: 'note', title: n.t.split('\n')[0], sub: pre > 0 ? `${n.at} · còn ${pre === 60 ? '1 giờ' : pre + ' phút'}` : 'Ghi chú · ' + n.at, link: n.link || '' });
+      }
     }
     lastTick = now;
   }
@@ -1425,9 +1567,16 @@ Có gì mới: ${u.notes}` : '');
         renderCalendar(); break;
       }
       case 'cal-today': S.sel = today0(); renderCalendar(); break;
-      case 'cal-toggle': S.calMonth = !S.calMonth; store.set('calMonth', S.calMonth); renderCalendar(); applyLayout(); break;
+      case 'cal-toggle': ncClose(); S.calMonth = !S.calMonth; store.set('calMonth', S.calMonth); renderCalendar(); applyLayout(); break;
       case 'cal-pick': { const d = new Date(Number(el.dataset.ts)); S.sel = new Date(d.getFullYear(), d.getMonth(), d.getDate()); renderCalendar(); break; }
-      case 'note-add': addNote(); break;
+      case 'nc-open': ncOpen(null); break;
+      case 'nc-save': ncSave(); break;
+      case 'nc-cancel': ncClose(); break;
+      case 'nc-rem': if (S.nc.rem < 0) { S.nc.rem = 0; renderRem(); } else nextRem(); break;
+      case 'nc-rem-off': S.nc.rem = -1; renderRem(); break;
+      case 'note-edit': { const n = notesOf(S.sel).find((x) => x.id === el.dataset.id); if (n) ncOpen(n); break; }
+      case 'note-link': { const n = notesOf(S.sel).find((x) => x.id === el.dataset.id); if (n && n.link) api.openUrl(n.link); break; }
+      case 'ring-link': if (S.ring && S.ring.link) api.openUrl(S.ring.link); stopRing(); break;
       case 'note-del': { const k = ymd(S.sel); S.notes[k] = (S.notes[k] || []).filter((x) => x.id !== el.dataset.id); if (!S.notes[k].length) delete S.notes[k]; saveNotes(); renderCalendar(); break; }
       // Kệ tạm
       case 'shelf-open': api.shelfOpen(el.dataset.id); break;
@@ -1529,9 +1678,9 @@ Có gì mới: ${u.notes}` : '');
     S.typing = false; api.typing(false);
     if (!S.hoverRaw) collapseSoon(300);
   }
-  document.addEventListener('focusin', (ev) => { if (ev.target.matches('input')) beginTyping(); });
+  document.addEventListener('focusin', (ev) => { if (ev.target.matches('input, textarea')) beginTyping(); });
   document.addEventListener('pointerdown', (ev) => {
-    const inp = ev.target.closest && ev.target.closest('input');
+    const inp = ev.target.closest && ev.target.closest('input, textarea');
     if (!inp || ev.button !== 0) return;
     pendingInput = inp;
     beginTyping();
@@ -1549,9 +1698,9 @@ Có gì mới: ${u.notes}` : '');
   // Bấm sang ứng dụng khác: cửa sổ mất focus, ô nhập có thể không nhận focusout -> tự kết thúc chế độ gõ
   window.addEventListener('blur', () => { setTimeout(() => { if (!document.hasFocus() && S.typing) endTyping(); }, 120); });
   document.addEventListener('focusout', (ev) => {
-    if (!ev.target.matches('input')) return;
+    if (!ev.target.matches('input, textarea')) return;
     typingTimer = setTimeout(() => {
-      if (document.activeElement && document.activeElement.matches('input')) return;
+      if (document.activeElement && document.activeElement.matches('input, textarea')) return;
       endTyping();
     }, 120);
   });
@@ -1563,8 +1712,13 @@ Có gì mới: ${u.notes}` : '');
       markClipSel();
       return;
     }
+    // Khung soạn ghi chú: Enter lưu (Shift+Enter xuống dòng), Esc huỷ
+    if (id === 'ncText' || id === 'ncLink') {
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ncSave(); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ncClose(); }
+      return;
+    }
     if (ev.key === 'Enter' && ev.target.matches('input')) {
-      if (id === 'noteIn' || id === 'noteAt') addNote();
       if (id === 'clipQ') {
         const it = $$('#clipList .c-item')[clipSel];
         if (it) act('clip-copy', it); // chép rồi trả bàn phím lại cho ứng dụng đang dùng để dán ngay
@@ -1590,12 +1744,16 @@ Có gì mới: ${u.notes}` : '');
   $('#clipPauseBtn').innerHTML = ICON.pause;
   $('#shelfClearBtn').innerHTML = ICON.minusCircle;
   $('#clipQx').innerHTML = ICON.xCircle;
-  $('#noteAddBtn').innerHTML = ICON.plus;
+  $('#ncPlus').innerHTML = ICON.plus;
+  $('#ncLinkIco').innerHTML = ICON.link;
+  $('#ncRemIco').innerHTML = L('<circle cx="12" cy="13" r="7.2"/><path d="M12 9.6V13l2.4 1.5M5 4.6 3 6.6M19 4.6l2 2"/>', 2);
+  $('#ncRemX').innerHTML = ICON.x;
+  $('#ringSnooze').textContent = 'Báo lại 5 phút';
   api.clipGet();
   api.shelfGet();
   setTab(S.tab);
   applyLayout();
   setInterval(tick, 100);
 
-  if (window.__DI_TEST) window.__di = { S, startRing, stopRing, act, renderAll, applyLayout, setTab, renderCompact, renderMusic, renderOut, renderVol, setAccent, renderClip, renderShelf, showNotice, holidayOf, diffDevices, snoozeRing, endNotice, noticeQueue, checkSnooze };
+  if (window.__DI_TEST) window.__di = { S, startRing, stopRing, act, renderAll, applyLayout, setTab, renderCompact, renderMusic, renderOut, renderVol, setAccent, renderClip, renderShelf, showNotice, holidayOf, diffDevices, snoozeRing, endNotice, noticeQueue, checkSnooze, checkNotes, ncOpen, ncSave, ncClose, drumTime, setLastTick: (t) => { lastTick = t; } };
 })();
