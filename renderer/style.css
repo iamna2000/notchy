@@ -42,7 +42,13 @@ input::placeholder { color: var(--label2); }
 .shell { transition: background-color .35s ease; }
 /* Góc bo do app.js đặt (bo lớn cả 4 góc, tự thành viên con nhộng khi chỉ cao 4px); màu vạch chỉ hiện khi đã co
    gần xong (trễ .35s), để lúc đang co từ bảng lớn vẫn là khối đen bo tròn chứ không phải mảng màu vuông */
-.island[data-mode="hidden"] { transform: translateY(3px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .22); }
+/* Lúc co: giữ khối dính sát mép trên (góc trên vuông, chưa hạ xuống) cho tới khi gần thành vạch, rồi mới bo tròn
+   và hạ 3px. Trước đây hạ + bo ngay từ đầu nên khối còn to đã tách khỏi mép trên, lộ khe sáng và hai "tai" lơ lửng.
+   Chiều ngược lại (hiện ra) dùng transition mặc định của .island, không trễ. */
+.island[data-mode="hidden"] {
+  transform: translateY(3px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .22);
+  transition: width .8s var(--spring), height .8s var(--spring), border-radius .3s ease .42s, transform .3s ease .45s, opacity .3s ease, box-shadow .4s ease .45s;
+}
 .island[data-mode="hidden"] .shell { background: rgba(152, 152, 159, .92); transition: background-color .3s ease .35s; }
 .island[data-mode="hidden"].playing .shell { background: var(--wave, #c9b8ff); }
 .shell { position: absolute; inset: 0; overflow: hidden; background: #000; border-radius: inherit; }
