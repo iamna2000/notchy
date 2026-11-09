@@ -74,6 +74,28 @@ async function testPill() {
     fit ? ok(`kệ tạm ${n} tệp (chế độ mở rộng) không bị cắt`) : fail(`kệ tạm ${n} tệp bị cắt ô ảnh`);
   }
   await run("window.__di.S.shelfOpen = false;0");
+  // Thông báo ngắn: cái thứ hai phải chờ tới lượt (không đè cái đầu), huy hiệu +1, trùng lặp thì bỏ
+  await run(`(() => { const d = window.__di; d.S.hover = false; d.S.hoverRaw = false; d.S.open = false;
+    d.showNotice({ kind: 'download', title: 'Đã tải xong', sub: 'a.zip' });
+    d.showNotice({ kind: 'download', title: 'Đã tải xong', sub: 'b.zip' });
+    d.showNotice({ kind: 'download', title: 'Đã tải xong', sub: 'b.zip' }); })();0`);
+  const q1 = await run("[window.__di.S.notice.sub, window.__di.noticeQueue.length, document.getElementById('nMore').textContent].join('|')");
+  q1 === 'a.zip|1|+1' ? ok('hàng đợi thông báo (+1, bỏ trùng)') : fail('hàng đợi thông báo: ' + q1);
+  await run('window.__di.endNotice();0');
+  const q2 = await run("[window.__di.S.notice && window.__di.S.notice.sub, window.__di.noticeQueue.length].join('|')");
+  q2 === 'b.zip|0' ? ok('thông báo kế tiếp hiện sau khi cái đầu hết giờ') : fail('thông báo kế tiếp: ' + q2);
+  await run('window.__di.endNotice();0');
+  // Chuông nhắc: Báo lại 5 phút -> tắt chuông, lưu lịch, hiện xác nhận; tới giờ thì đổ chuông lại
+  await run("window.__di.startRing({ kind: 'note', title: 'Họp', sub: 'Ghi chú · 09:00' });0");
+  const snoozeBtn = await run("!!document.querySelector('#ringView [data-act=ring-snooze]')");
+  snoozeBtn ? ok('nút Báo lại trên chuông') : fail('thiếu nút Báo lại');
+  await run('window.__di.snoozeRing();0');
+  const sz = await run("[!!window.__di.S.ring, window.__di.S.snooze.length, window.__di.S.notice && window.__di.S.notice.kind].join('|')");
+  sz === 'false|1|snooze' ? ok('báo lại: tắt chuông, lưu lịch, hiện xác nhận') : fail('báo lại: ' + sz);
+  await run('window.__di.endNotice(); window.__di.S.snooze[0].at = Date.now() - 1000; window.__di.checkSnooze();0');
+  const rr = await run("window.__di.S.ring ? window.__di.S.ring.title + '|' + window.__di.S.ring.sub + '|' + window.__di.S.snooze.length : 'none'");
+  rr === 'Họp|Báo lại · Ghi chú · 09:00|0' ? ok('tới giờ báo lại thì đổ chuông') : fail('đổ chuông báo lại: ' + rr);
+  await run('window.__di.stopRing(); window.__di.endNotice();0');
   await cb('onKbOpen', true);
   const kb = await run('window.__di.S.open && window.__di.S.hover');
   kb ? ok('mở bằng phím tắt') : fail('phím tắt không mở viên thuốc');

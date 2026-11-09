@@ -34,7 +34,7 @@ Thanh icon phía trên: **Nhạc · Thời tiết · Lịch** (bên trái, số 
   - **Dự báo 7 ngày**: rê chuột lên một ngày để xem lượng mưa, gió giật, UV. Ngày có thời tiết cực đoan được viền cam/đỏ.
   - Ngưỡng nóng/rét theo cách gọi của Trung tâm Dự báo KTTV quốc gia: nắng nóng khi cao nhất ≥35°, gay gắt ≥37°; rét đậm khi nhiệt độ trung bình ngày ≤15°, rét hại ≤13°. Ngoài ra có mưa to (≥20 mm), gió giật mạnh (≥50 km/h), dông sét, UV cao, sương mù.
   - Các báo thức cũ không còn được dùng.
-- **Bảng tạm**: nhớ 50 đoạn văn bản chép gần nhất. Bấm vào một mục để chép lại vào clipboard (không tự dán); dòng đó phát sáng xanh kèm chữ "Đã chép" để biết đã nhận. Có tìm kiếm, ghim (biểu tượng đánh dấu), xóa. Nội dung từ trình quản lý mật khẩu thường được bỏ qua (làm tốt nhất có thể, không đảm bảo 100%). Viên thuốc dài theo số mục (tối đa khoảng 6 mục rồi cuộn).
+- **Bảng tạm**: nhớ 50 đoạn văn bản chép gần nhất. Bấm vào một mục để chép lại vào clipboard (không tự dán); dòng đó phát sáng xanh kèm chữ "Đã chép" để biết đã nhận. Có tìm kiếm (trong ô tìm: **↑/↓** chọn mục, **Enter** chép, **Esc** xóa chữ đã gõ), ghim (biểu tượng đánh dấu), xóa. Nội dung từ trình quản lý mật khẩu thường được bỏ qua (làm tốt nhất có thể, không đảm bảo 100%). Viên thuốc dài theo số mục (tối đa khoảng 6 mục rồi cuộn).
 - **Kệ tạm** (một hàng ảnh/tệp cuộn ngang, lăn chuột để xem thêm; tiêu đề ghi số tệp và tổng dung lượng; khi có từ 4 tệp, nút mũi tên cạnh nút xóa mở kệ thành lưới 5 cột, tối đa 3 hàng rồi cuộn dọc, bấm lại để thu về một hàng. App nhớ chế độ đang chọn): kéo tệp hoặc thư mục từ Explorer lên viên thuốc, đảo tự mở sang tab này, thả tệp vào. Khi cần, **kéo từ kệ thả sang ứng dụng khác** (Zalo, Mail, Chrome...). Bấm vào một tệp để mở thư mục chứa nó, bấm dấu x để bỏ khỏi kệ. Kệ chỉ nhớ đường dẫn, không sao chép hay xóa tệp thật; nếu tệp gốc bị di chuyển/xóa thì tự biến mất khỏi kệ. **Ảnh chụp màn hình** (Win+Shift+S, PrtScn) tự lên đầu kệ kèm thông báo nhỏ, kéo thẳng sang Zalo/Messenger... không cần mở thư mục Screenshots. Kệ giữ 10 ảnh chụp gần nhất; tắt ở Cài đặt > Bảng tạm & Kệ tạm. Cần bật tự lưu ảnh của Snipping Tool (mặc định đã bật trên Windows 11).
 
 ## Thông báo ngắn trên viên thuốc (mới)
@@ -42,6 +42,10 @@ Viên thuốc tự nở ra khoảng 4 giây khi:
 - Vừa cắm sạc, hoặc pin xuống còn 20% / 10% (chỉ laptop).
 - Một tệp vừa tải xong vào thư mục **Downloads** (bỏ qua tệp tạm .crdownload, .part...).
 - Có thiết bị âm thanh mới xuất hiện (tai nghe, loa Bluetooth, tai nghe cắm dây).
+
+Nhiều thông báo đến cùng lúc (chụp liền 2 ảnh, tải xong nhiều tệp) thì **xếp hàng** hiện lần lượt, góc phải ghi **+N** là số đang chờ; thông báo đến lúc bạn đang dùng bảng sẽ hiện khi bạn rời chuột. Rê chuột vào thông báo *Đã thêm vào Kệ tạm* là mở thẳng Kệ tạm.
+
+**Nhắc ghi chú**: khi chuông đổ, bấm **Báo lại sau 5 phút** hoặc **Xong**. Lịch báo lại được nhớ cả khi tắt app; máy ngủ qua giờ thì nhắc ngay khi thức dậy (ghi "trễ").
 
 **Lịch**: đánh dấu ngày lễ (dương lịch và âm lịch, gồm Tết Nguyên Đán, Giỗ Tổ, Trung Thu...) bằng chấm đỏ và dòng "Lễ" bên dưới ngày được chọn.
 

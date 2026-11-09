@@ -117,8 +117,11 @@ input::placeholder { color: var(--label3); }
 .tb-date { font-size: 13px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; }
 
 .views { position: absolute; left: 0; right: 0; top: var(--top); bottom: 0; }
-.view { position: absolute; inset: 0; padding: 4px 28px 0; opacity: 0; visibility: hidden; transform: scale(.97); filter: blur(8px); transition: opacity .2s ease, transform .3s ease, filter .25s ease, visibility 0s .25s; }
-.view.on { opacity: 1; visibility: visible; transform: none; filter: none; transition: opacity .35s ease .05s, transform .6s var(--spring) .05s, filter .35s ease .05s, visibility 0s; }
+/* Đổi tab: chỉ opacity + transform (rẻ, chạy trên GPU). Trước đây có thêm blur(8px) cho cả hai trang cùng lúc:
+   trên cửa sổ trong suốt, mỗi khung hình phải làm mờ lại ~480x300 điểm ảnh x2. Trang mới trượt nhẹ theo hướng
+   tab (--dir do app.js đặt: tab bên phải => vào từ phải). */
+.view { --dir: 0; position: absolute; inset: 0; padding: 4px 28px 0; opacity: 0; visibility: hidden; transform: translateX(calc(var(--dir) * 14px)) scale(.985); transition: opacity .16s ease, transform .3s ease, visibility 0s .2s; }
+.view.on { opacity: 1; visibility: visible; transform: none; transition: opacity .3s ease .04s, transform .55s var(--spring) .04s, visibility 0s; }
 
 /* ----- Nút / thành phần dùng chung ----- */
 .ib-s { width: 28px; height: 28px; border-radius: 14px; color: var(--label2); }
@@ -411,6 +414,7 @@ input::placeholder { color: var(--label3); }
 .clip-list::-webkit-scrollbar { width: 0; }
 .c-item { display: flex; align-items: center; gap: 10px; height: 42px; margin-bottom: 6px; padding: 0 8px 0 12px; border-radius: 12px; background: var(--g1); cursor: pointer; font-size: 13px; }
 .c-item:hover { background: var(--g2); }
+.c-item.kb { background: var(--g2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
 /* Vừa chép: viền và nền phát sáng xanh rồi tắt dần, kèm dấu "Đã chép" */
 .c-item.copied, .pin-chip.copied { animation: cpGlow 1.3s ease-out; }
 @keyframes cpGlow {
@@ -490,10 +494,12 @@ body.dropping .sh-item { box-shadow: inset 0 0 0 1.5px var(--blue); }
 .island[data-mode="notice"] .notice-view { opacity: 1; filter: none; transition: opacity .3s ease .15s, filter .35s ease .15s; }
 .n-ico { width: 34px; height: 34px; border-radius: 17px; flex: none; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .12); color: var(--nc, #fff); }
 .n-ico svg { width: 18px; height: 18px; }
-.n-ico img { width: 100%; height: 100%; object-fit: cover; }
-.n-ico:has(img) { border-radius: 9px; overflow: hidden; }
 .n-ico img { width: 100%; height: 100%; object-fit: cover; border-radius: 9px; }
 .n-ico:has(img) { border-radius: 9px; overflow: hidden; }
+/* Thông báo bấm được (ảnh chụp, tệp tải xong): rê chuột vào là mở Kệ tạm / thư mục */
+.island[data-mode="notice"] .notice-view.act { cursor: pointer; }
+.n-more { flex: none; margin-left: auto; padding: 2px 7px; border-radius: 8px; background: rgba(255, 255, 255, .12); font-size: 10.5px; font-weight: 600; color: var(--label2); font-variant-numeric: tabular-nums; }
+.n-more:empty { display: none; }
 .n-txt { min-width: 0; }
 .n-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .n-sub { margin-top: 1px; font-size: 12px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -512,6 +518,15 @@ body.dropping .sh-item { box-shadow: inset 0 0 0 1.5px var(--blue); }
 .view:not(.on) .wxa svg * { animation-play-state: paused; }
 /* Cả cửa sổ đang ẩn (ẩn từ khay, game toàn màn hình): dừng mọi animation */
 .win-off *, .win-off *::before, .win-off *::after { animation-play-state: paused !important; }
+/* Windows bật "Hiệu ứng hoạt hình: tắt": bỏ các chuyển động lặp vô hạn (chữ chạy, chuông lắc, eq),
+   rút ngắn chuyển cảnh; viên thuốc vẫn co giãn nhưng không nảy lò xo */
+@media (prefers-reduced-motion: reduce) {
+  .mq.run { animation: none; }
+  .mq.run .mq-i + .mq-i { display: none; }
+  .ring-icon, .eq i { animation: none; }
+  .island, .ear, .c-art { transition-timing-function: ease-out !important; transition-duration: .25s !important; }
+  .view, .view.on { transform: none; transition-duration: .15s; }
+}
 
 /* Thời tiết nhiều địa điểm: hàng chọn địa điểm, nút chọn địa điểm khi không đoán được vị trí */
 .wx-places { display: flex; gap: 6px; margin: -2px 0 8px; overflow-x: auto; scrollbar-width: none; flex: none; }

@@ -80,7 +80,7 @@
               <div class="clip-ttl">Bảng tạm</div>
               <div class="clip-tools">
                 <button class="ib-s" data-act="clip-pause" id="clipPauseBtn" title="Tạm dừng ghi bảng tạm"></button><button class="ib-s" data-act="clip-clear" id="clipClearBtn" title="Xóa lịch sử (giữ mục đã ghim)"></button>
-                <div class="search"><input id="clipQ" placeholder="Tìm kiếm" spellcheck="false" /><button class="x" data-act="clip-q-clear" id="clipQx"></button></div>
+                <div class="search"><input id="clipQ" placeholder="Tìm kiếm" spellcheck="false" title="↑/↓ chọn · Enter chép · Esc xóa" /><button class="x" data-act="clip-q-clear" id="clipQx"></button></div>
               </div>
             </div>
             <div class="clip-pins" id="clipPins"></div>
@@ -102,6 +102,7 @@
       <div class="notice-view" id="noticeView">
         <div class="n-ico" id="nIcon"></div>
         <div class="n-txt"><div class="n-title" id="nTitle"></div><div class="n-sub" id="nSub"></div></div>
+        <span class="n-more" id="nMore" title="Thông báo đang chờ"></span>
       </div>
 
       <!-- ===== Đổ chuông ===== -->
@@ -114,6 +115,7 @@
           </div>
         </div>
         <div class="ring-actions">
+          <button class="pbtn tint" id="ringSnooze" data-act="ring-snooze">Báo lại sau 5 phút</button>
           <button class="pbtn light" id="ringStop" data-act="ring-stop">Xong</button>
         </div>
       </div>

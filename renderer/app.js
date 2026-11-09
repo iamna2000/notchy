@@ -52,8 +52,6 @@
     lock: L('<rect x="5" y="10.5" width="14" height="10" rx="2.4"/><path d="M8.2 10.5V8a3.8 3.8 0 0 1 7.6 0v2.5"/>', 2),
     expand: L('<path d="M12 4.5v10M7.5 10 12 14.5 16.5 10M5.5 19h13"/>', 2),
     collapse: L('<path d="M12 19.5v-10M7.5 14 12 9.5l4.5 4.5M5.5 5h13"/>', 2),
-    up: L('<path d="m6 14.5 6-6 6 6"/>'),
-    down: L('<path d="m6 9.5 6 6 6-6"/>'),
     calendar: L('<rect x="3.8" y="5.2" width="16.4" height="15" rx="3.2"/><path d="M3.8 10.2h16.4M8.4 3.2v4M15.6 3.2v4"/>', 1.8),
     clock: F('<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm.8 4.6v4.2l2.9 1.7a.8.8 0 0 1-.8 1.4l-3.3-1.9a.8.8 0 0 1-.4-.7V7.6a.8.8 0 0 1 1.6 0z" fill-rule="evenodd"/>'),
     bell: L('<path d="M6 16.6h12l-1.6-2.2v-4.2a4.4 4.4 0 0 0-8.8 0v4.2z"/><path d="M10 19.6a2 2 0 0 0 4 0"/>'),
@@ -194,6 +192,7 @@
       // Lần rê chuột sau mở lại bảng nhạc ở dạng gọn: đóng phần chọn thiết bị phát nếu còn mở
       if (S.outOpen) { S.outOpen = false; musicSig = ''; renderMusic(); }
       applyLayout();
+      nextNotice(); // thông báo đến trong lúc đang dùng bảng: hiện bây giờ
     }, ms);
   }
   api.onHover((v) => {
@@ -203,6 +202,8 @@
       const reset = (S.prefs.tabReset || 0) * 1000, home = S.prefs.defaultTab || 'music';
       if (reset && leftAt && Date.now() - leftAt >= reset && S.tab !== home) setTab(home);
       leftAt = 0;
+      // Rê vào đúng lúc đang báo "Đã thêm vào Kệ tạm": mở thẳng Kệ tạm để kéo ảnh đi luôn
+      if (S.notice && S.notice.kind === 'shot') { if (S.tab !== 'shelf') setTab('shelf'); S.open = true; }
       S.hover = true; applyLayout(); requestSys();
     }
     else collapseSoon(380);
@@ -232,10 +233,21 @@
   /* ================= Tab ================= */
   const TB_ICON = { music: ICON.music, sys: ICON.gauge, weather: ICON.weather, clip: ICON.clip, shelf: ICON.shelf };
   $$('.tb').forEach((b) => { if (TB_ICON[b.dataset.tab]) b.innerHTML = TB_ICON[b.dataset.tab]; });
+  // Thứ tự tab trên thanh icon: trang mới trượt vào từ phía tab được bấm, trang cũ trượt ra phía ngược lại
+  const TAB_ORDER = ['music', 'weather', 'calendar', 'clip', 'shelf', 'sys'];
   function setTab(id) {
+    const dir = Math.sign(TAB_ORDER.indexOf(id) - TAB_ORDER.indexOf(S.tab));
     S.tab = id;
     $$('.tb').forEach((b) => b.classList.toggle('on', b.dataset.tab === id));
-    $$('.view').forEach((v) => v.classList.toggle('on', v.dataset.view === id));
+    const views = $$('.view');
+    const incoming = views.find((v) => v.dataset.view === id && !v.classList.contains('on'));
+    // Trang sắp hiện: đặt điểm xuất phát rồi đọc lại style (để chuyển động bắt đầu từ đúng phía), sau đó mới bật
+    if (incoming && dir) { incoming.style.setProperty('--dir', dir); void getComputedStyle(incoming).transform; }
+    views.forEach((v) => {
+      const on = v.dataset.view === id;
+      if (!on && v.classList.contains('on')) v.style.setProperty('--dir', -dir);
+      v.classList.toggle('on', on);
+    });
     renderTopDate();
     renderAll();
     syncWave();
@@ -244,8 +256,9 @@
     requestSys(true);
   }
   function renderTopDate() {
-    const n = new Date();
-    $('#tbDate').textContent = S.tab === 'calendar' ? `${n.getDate()}.${n.getMonth() + 1}` : String(n.getDate());
+    const n = new Date(), el = $('#tbDate');
+    const t = S.tab === 'calendar' ? `${n.getDate()}.${n.getMonth() + 1}` : String(n.getDate());
+    if (el.textContent !== t) el.textContent = t; // gọi mỗi giây
   }
 
   /* ================= Định dạng ================= */
@@ -374,14 +387,21 @@
     renderOut();
     updateProgress();
   }
+  // Chỉ ghi vào DOM khi giá trị hiển thị thực sự đổi: tick() gọi hàm này 10 lần/giây, mỗi lần ghi style/chữ
+  // (dù giống hệt) đều bắt cửa sổ trong suốt vẽ lại. Thanh dài ~420px nên làm tròn 0,1% là đủ mượt.
+  let progLast = '';
   function updateProgress() {
     const fill = $('#mFill');
-    if (!fill || !hasMusic()) return;
-    const m = S.media, p = curPos(), pc = m.dur > 0 ? (p / m.dur) * 100 : 0;
+    if (!fill || !hasMusic()) { progLast = ''; return; }
+    const m = S.media, p = curPos(), pc = m.dur > 0 ? Math.round((p / m.dur) * 1000) / 10 : 0;
+    const pos = fmtTrack(p), rem = m.dur > 0 ? '-' + fmtTrack(m.dur - p) : '--:--';
+    const sig = pc + '|' + pos + '|' + rem;
+    if (sig === progLast && fill.isConnected && fill.style.width) return;
+    progLast = sig;
     fill.style.width = pc + '%';
     $('#mKnob').style.left = pc + '%';
-    $('#mPos').textContent = fmtTrack(p);
-    $('#mRem').textContent = m.dur > 0 ? '-' + fmtTrack(m.dur - p) : '--:--';
+    $('#mPos').textContent = pos;
+    $('#mRem').textContent = rem;
   }
 
   /* ----- Âm lượng + thiết bị phát ----- */
@@ -573,7 +593,8 @@
     // Không phát gì: ngày (trái) · giờ (giữa) · thời tiết (phải)
     compactEl.classList.toggle('idle', !extras);
     if (!extras) {
-      cc.textContent = fmtClock(now);
+      const clock = fmtClock(now);
+      if (cc.textContent !== clock) cc.textContent = clock; // gọi mỗi giây: chỉ ghi khi đổi phút
       const w = wxFresh() ? S.weather : null;
       const date = `${VN_DOW[now.getDay()]} ${now.getDate()}/${now.getMonth() + 1}`;
       const sig = ['idle', date, w ? `${Math.round(w.temp)}|${w.code}|${w.day}` : ''].join('|');
@@ -1059,8 +1080,22 @@
         <span class="acts"><button class="${x.pin ? 'on' : ''}" data-act="clip-pin" data-id="${x.id}" title="Ghim">${x.pin ? ICON.bookmarkF : ICON.bookmark}</button><button data-act="clip-del" data-id="${x.id}" title="Xóa">${ICON.x}</button></span>
       </div>`; }).join('');
     }
+    markClipSel();
     const h = list.offsetTop + list.offsetHeight;
     if (h > 0 && h !== clipH) { clipH = h; applyLayout(); }
+  }
+  // Chọn bằng bàn phím trong ô tìm kiếm: ↑/↓ di chuyển, Enter chép mục đang chọn (mặc định mục đầu tiên)
+  let clipSel = 0;
+  function markClipSel() {
+    const items = $$('#clipList .c-item');
+    clipSel = clamp(clipSel, 0, Math.max(0, items.length - 1));
+    const kb = S.typing && document.activeElement && document.activeElement.id === 'clipQ';
+    items.forEach((it, i) => it.classList.toggle('kb', kb && i === clipSel));
+    const it = kb && items[clipSel], list = $('#clipList');
+    if (it) { // tự cuộn (không dùng scrollIntoView: nó cuộn cả các khung cha overflow:hidden)
+      if (it.offsetTop < list.scrollTop) list.scrollTop = it.offsetTop;
+      else if (it.offsetTop + it.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = it.offsetTop + it.offsetHeight - list.clientHeight;
+    }
   }
 
   /* ================= Kệ tạm (kéo thả tệp) ================= */
@@ -1118,25 +1153,52 @@
   });
 
   /* ================= Thông báo ngắn (sạc, pin yếu, tải xong, tai nghe) ================= */
+  // Hàng đợi: thông báo đến khi đang hiện thông báo khác / đang đổ chuông / đang rê chuột trên bảng thì chờ
+  // tới lượt (trước đây cái mới đè mất cái cũ, vd. chụp 2 ảnh liền nhau). Huy hiệu "+N" cho biết còn bao nhiêu.
   let noticeTimer = null;
-  const NOTICE_ICON = { charge: [ICON.bolt, '#30d158'], low: [ICON.battery, '#ff453a'], download: [ICON.download, '#0a84ff'], device: [ICON.headphones, '#ffffff'], shot: [ICON.shelf, '#bf5af2'], update: [ICON.download, '#30d158'] };
+  const noticeQueue = [];
+  const NOTICE_MAX_Q = 5, NOTICE_MS = 4000, NOTICE_MS_BUSY = 2800; // còn hàng chờ thì mỗi cái hiện ngắn hơn
+  const NOTICE_ICON = { charge: [ICON.bolt, '#30d158'], low: [ICON.battery, '#ff453a'], download: [ICON.download, '#0a84ff'], device: [ICON.headphones, '#ffffff'], shot: [ICON.shelf, '#bf5af2'], update: [ICON.download, '#30d158'], snooze: [ICON.bell, '#ff9f0a'] };
+  const noticeKey = (n) => n.kind + '|' + (n.title || '') + '|' + (n.sub || '');
   function showNotice(n) {
-    if (!n || S.ring) return;
+    if (!n) return;
     // Loại thông báo bị tắt trong Cài đặt (sạc / pin yếu chung nhóm "pin")
     const group = n.kind === 'charge' || n.kind === 'low' ? 'battery' : n.kind;
     if (S.prefs.notify && S.prefs.notify[group] === false) return;
+    if (S.ring || S.notice || S.hoverRaw) {
+      const k = noticeKey(n);
+      if ((S.notice && noticeKey(S.notice) === k) || noticeQueue.some((x) => noticeKey(x) === k)) return; // trùng
+      noticeQueue.push(n);
+      if (noticeQueue.length > NOTICE_MAX_Q) noticeQueue.shift(); // giữ các thông báo mới nhất
+      renderNoticeMore();
+      return;
+    }
+    displayNotice(n);
+  }
+  function renderNoticeMore() { $('#nMore').textContent = noticeQueue.length ? '+' + noticeQueue.length : ''; }
+  function displayNotice(n) {
     const [ic, col] = NOTICE_ICON[n.kind] || NOTICE_ICON.device;
     // Ảnh chụp màn hình: hiện luôn ảnh thu nhỏ thay cho biểu tượng
     $('#nIcon').innerHTML = n.thumb && /^data:image\//.test(n.thumb) ? `<img src="${esc(n.thumb)}" alt="" />` : ic;
     $('#nIcon').style.setProperty('--nc', col);
     $('#nTitle').textContent = n.title || '';
     $('#nSub').textContent = n.sub || '';
+    $('#noticeView').classList.toggle('act', n.kind === 'shot');
+    renderNoticeMore();
     S.notice = n;
     api.notice();
     clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => { S.notice = null; applyLayout(); }, 4000);
+    noticeTimer = setTimeout(endNotice, noticeQueue.length ? NOTICE_MS_BUSY : NOTICE_MS);
     applyLayout();
   }
+  function endNotice() {
+    clearTimeout(noticeTimer);
+    S.notice = null;
+    // Đang rê chuột / đổ chuông: giữ hàng chờ, hiện tiếp khi viên thuốc thu gọn lại (nextNotice)
+    if (noticeQueue.length && !S.ring && !S.hoverRaw) { displayNotice(noticeQueue.shift()); return; }
+    applyLayout();
+  }
+  function nextNotice() { if (!S.notice && !S.ring && !S.hoverRaw && noticeQueue.length) displayNotice(noticeQueue.shift()); }
   api.onToast((t) => showNotice(t));
 
   // Pin: báo khi cắm sạc, pin yếu (20%, 10%)
@@ -1211,6 +1273,29 @@
     stopSound();
     api.alert(false);
     applyLayout();
+    nextNotice(); // thông báo ngắn bị giữ lại trong lúc đổ chuông: hiện tiếp
+  }
+  // Báo lại: lưu vào localStorage (tắt app / máy ngủ vẫn nhớ), checkNotes() đổ chuông lại khi tới giờ
+  const SNOOZE_MIN = 5;
+  S.snooze = store.get('snooze', []).filter((x) => x && x.at > Date.now() - 3600000);
+  function snoozeRing() {
+    const r = S.ring;
+    if (!r) return;
+    const at = Date.now() + SNOOZE_MIN * 60000;
+    S.snooze.push({ at, title: r.title, sub: r.orig || r.sub || '' });
+    store.set('snooze', S.snooze);
+    // Xác nhận hiện ngay sau khi tắt chuông (trước các thông báo đang chờ)
+    noticeQueue.unshift({ kind: 'snooze', title: 'Sẽ nhắc lại lúc ' + fmtClock(new Date(at)), sub: r.title });
+    stopRing();
+  }
+  function checkSnooze() {
+    if (!S.snooze.length || S.ring) return;
+    const now = Date.now(), due = S.snooze.find((x) => x.at <= now);
+    if (!due) return;
+    S.snooze = S.snooze.filter((x) => x !== due);
+    store.set('snooze', S.snooze);
+    // Máy ngủ / tắt app quá giờ báo lại: vẫn nhắc (ghi "trễ") để không mất việc
+    startRing({ kind: 'note', title: due.title, sub: (now - due.at > 120000 ? 'Báo lại (trễ) · ' : 'Báo lại · ') + due.sub, orig: due.sub });
   }
 
   /* ================= Nhắc ghi chú theo giờ (có bù khi máy ngủ dậy) ================= */
@@ -1231,10 +1316,11 @@
   let lastSec = -1;
   function tick() {
     const now = new Date();
-    if (S.tab === 'music' && !(S.drag && S.drag.k === 'seek')) updateProgress();
+    // Thanh tiến trình chỉ cập nhật khi bảng nhạc đang hiện (đóng bảng thì không có gì để vẽ)
+    if (S.tab === 'music' && island.dataset.mode === 'open' && !winOff && !(S.drag && S.drag.k === 'seek')) updateProgress();
     if (now.getSeconds() !== lastSec) {
       lastSec = now.getSeconds();
-      checkNotes(); renderCompact(); renderTopDate();
+      checkNotes(); checkSnooze(); renderCompact(); renderTopDate();
       if (S.hover || S.peek) requestSys();
       if (Date.now() - devPoll > 8000) { devPoll = Date.now(); api.sys('devices'); }
       applyLayout();
@@ -1338,6 +1424,7 @@
       case 'clip-q-clear': { const q = $('#clipQ'); q.value = ''; S.clipQ = ''; $('#clipQx').classList.remove('on'); renderClip(); break; }
       // Chuông
       case 'ring-stop': stopRing(); break;
+      case 'ring-snooze': snoozeRing(); break;
     }
   }
 
@@ -1413,13 +1500,31 @@
     }, 120);
   });
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' && ev.target.matches('input')) {
-      if (ev.target.id === 'noteIn' || ev.target.id === 'noteAt') addNote();
-      if (ev.target.id === 'clipQ') ev.target.blur();
+    const id = ev.target.id;
+    if (id === 'clipQ' && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) {
+      ev.preventDefault();
+      clipSel += ev.key === 'ArrowDown' ? 1 : -1;
+      markClipSel();
+      return;
     }
-    if (ev.key === 'Escape' && ev.target.matches('input')) ev.target.blur();
+    if (ev.key === 'Enter' && ev.target.matches('input')) {
+      if (id === 'noteIn' || id === 'noteAt') addNote();
+      if (id === 'clipQ') {
+        const it = $$('#clipList .c-item')[clipSel];
+        if (it) act('clip-copy', it); // chép rồi trả bàn phím lại cho ứng dụng đang dùng để dán ngay
+        ev.target.blur();
+      }
+    }
+    if (ev.key === 'Escape' && ev.target.matches('input')) {
+      // Ô tìm kiếm đang có chữ: Esc lần đầu xóa chữ, lần sau mới thoát
+      if (id === 'clipQ' && ev.target.value) { act('clip-q-clear'); return; }
+      ev.target.blur();
+    }
   });
-  $('#clipQ').addEventListener('input', (ev) => { S.clipQ = ev.target.value; $('#clipQx').classList.toggle('on', !!S.clipQ); renderClip(); });
+  $('#clipQ').addEventListener('input', (ev) => { S.clipQ = ev.target.value; clipSel = 0; $('#clipQx').classList.toggle('on', !!S.clipQ); renderClip(); });
+  // Bấm vào ô tìm kiếm: hiện ngay mục đang chọn; rời ô thì bỏ đánh dấu
+  $('#clipQ').addEventListener('focus', () => setTimeout(markClipSel, 0));
+  $('#clipQ').addEventListener('blur', () => setTimeout(markClipSel, 150));
 
   /* ================= Khởi động ================= */
   $('#calIco').innerHTML = ICON.calendar;
@@ -1436,5 +1541,5 @@
   applyLayout();
   setInterval(tick, 100);
 
-  if (window.__DI_TEST) window.__di = { S, startRing, stopRing, act, renderAll, applyLayout, setTab, renderCompact, renderMusic, renderOut, renderVol, setAccent, renderClip, renderShelf, showNotice, holidayOf, diffDevices };
+  if (window.__DI_TEST) window.__di = { S, startRing, stopRing, act, renderAll, applyLayout, setTab, renderCompact, renderMusic, renderOut, renderVol, setAccent, renderClip, renderShelf, showNotice, holidayOf, diffDevices, snoozeRing, endNotice, noticeQueue, checkSnooze };
 })();
