@@ -96,6 +96,23 @@ async function testPill() {
   const rr = await run("window.__di.S.ring ? window.__di.S.ring.title + '|' + window.__di.S.ring.sub + '|' + window.__di.S.snooze.length : 'none'");
   rr === 'Họp|Báo lại · Ghi chú · 09:00|0' ? ok('tới giờ báo lại thì đổ chuông') : fail('đổ chuông báo lại: ' + rr);
   await run('window.__di.stopRing(); window.__di.endNotice();0');
+  // Chờ ý định: lướt qua (< 150 ms) không mở gì; dừng lại thì mở
+  await run('window.__di.S.hover = false; window.__di.S.open = false;0');
+  await cb('onHover', true); await wait(60); await cb('onHover', false); await wait(150);
+  const flick = await run('window.__di.S.hover');
+  flick === false ? ok('lướt chuột qua không mở viên thuốc') : fail('lướt qua vẫn mở');
+  await cb('onHover', true);
+  const early = await run('window.__di.S.hover');
+  await wait(220);
+  const late = await run('window.__di.S.hover');
+  early === false && late === true ? ok('dừng chuột 150 ms thì mở') : fail(`chờ ý định: ngay=${early} sau=${late}`);
+  await cb('onHover', false); await wait(500);
+  // Nút Cài đặt trên thanh tab
+  await run("window.__di.S.hover = true; window.__di.S.open = true; window.__di.applyLayout(); document.getElementById('tbSet').click();0");
+  const setCall = await run("JSON.stringify(window.__calls.filter(c => c[0] === 'openSettings').pop() || null)");
+  setCall === '["openSettings",""]' ? ok('bánh răng mở Cài đặt') : fail('bánh răng: ' + setCall);
+  const tabOn = await run("getComputedStyle(document.querySelector('.tb.on')).backgroundColor");
+  tabOn !== 'rgba(0, 0, 0, 0)' ? ok('tab đang chọn có nền') : fail('tab đang chọn không có nền');
   await cb('onKbOpen', true);
   const kb = await run('window.__di.S.open && window.__di.S.hover');
   kb ? ok('mở bằng phím tắt') : fail('phím tắt không mở viên thuốc');

@@ -16,13 +16,20 @@
 //
 // Chạy: di-media.exe --parent-pid <pid của Electron>  (để bỏ qua cửa sổ của chính app khi dò cửa sổ che)
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
 use serde_json::{json, Value};
-use windows::core::PWSTR;
+use windows::core::{Interface, PWSTR};
+use windows::Win32::Media::Audio::{
+    eRender, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator,
+    MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+};
+use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as Manager,
@@ -109,6 +116,98 @@ fn process_name(pid: u32) -> Option<String> {
         let file = path.rsplit(['\\', '/']).next()?.to_string();
         Some(file.strip_suffix(".exe").or_else(|| file.strip_suffix(".EXE")).unwrap_or(&file).to_string())
     }
+}
+
+// ---------- Ứng dụng nào đang thật sự phát ra tiếng (WASAPI, đo mức âm từng tiến trình) ----------
+// Phiên nhạc của Windows (SMTC) chỉ là "ứng dụng tự khai báo có media": Riot Client, game launcher, video tự chạy
+// tắt tiếng... đều khai báo. Đo mức âm thanh thật (IAudioMeterInformation) của từng tiến trình để chỉ nhận nguồn
+// đang có tiếng. Mức âm là tức thời nên nhớ lần cuối nghe thấy (heard) để không chập chờn giữa các đoạn lặng.
+const PEAK_MIN: f32 = 0.0008; // ~-62 dB: lặng hẳn thì dưới mức này
+struct AudioWatch {
+    en: Option<IMMDeviceEnumerator>,
+    heard: HashMap<String, Instant>, // tên tiến trình (thường, bỏ khoảng trắng) -> lần cuối có tiếng
+    names: HashMap<u32, String>,     // pid -> tên tiến trình (đệm, xóa định kỳ vì pid có thể bị dùng lại)
+    names_at: Instant,
+}
+impl AudioWatch {
+    fn new() -> Self {
+        let en = unsafe { CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) };
+        if let Err(e) = &en { log_err(&format!("audio meter: {}", e.message())); }
+        AudioWatch { en: en.ok(), heard: HashMap::new(), names: HashMap::new(), names_at: Instant::now() }
+    }
+    // Không đo được (máy không có thiết bị âm thanh, lỗi COM): coi như mọi phiên đều có tiếng (như trước đây)
+    fn available(&self) -> bool { self.en.is_some() }
+    fn sample(&mut self) {
+        let Some(en) = &self.en else { return };
+        if self.names_at.elapsed() > Duration::from_secs(60) { self.names.clear(); self.names_at = Instant::now(); }
+        let now = Instant::now();
+        let mut loud: Vec<u32> = Vec::new();
+        unsafe {
+            // Mọi thiết bị phát đang bật (âm thanh có thể ra loa khác thiết bị mặc định)
+            let Ok(devs) = en.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else { return };
+            for i in 0..devs.GetCount().unwrap_or(0) {
+                let Ok(d) = devs.Item(i) else { continue };
+                let Ok(mgr) = d.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { continue };
+                let Ok(list) = mgr.GetSessionEnumerator() else { continue };
+                for k in 0..list.GetCount().unwrap_or(0) {
+                    let Ok(c) = list.GetSession(k) else { continue };
+                    let Ok(c2) = c.cast::<IAudioSessionControl2>() else { continue };
+                    let pid = c2.GetProcessId().unwrap_or(0);
+                    if pid == 0 { continue; } // âm thanh hệ thống
+                    let Ok(m) = c.cast::<IAudioMeterInformation>() else { continue };
+                    if m.GetPeakValue().unwrap_or(0.0) > PEAK_MIN { loud.push(pid); }
+                }
+            }
+        }
+        for pid in loud {
+            let name = self.names.entry(pid).or_insert_with(|| norm_proc(&process_name(pid).unwrap_or_default())).clone();
+            if !name.is_empty() { self.heard.insert(name, now); }
+        }
+        self.heard.retain(|_, t| now.duration_since(*t) < Duration::from_secs(3600));
+    }
+    // Lần cuối ứng dụng của phiên (AUMID) phát ra tiếng
+    fn last_heard(&self, aumid: &str) -> Option<Instant> {
+        self.heard.iter().filter(|(p, _)| app_matches(aumid, p)).map(|(_, t)| *t).max()
+    }
+}
+fn norm_proc(p: &str) -> String { p.to_lowercase().chars().filter(|c| !c.is_whitespace()).collect() }
+
+// AUMID của phiên nhạc có phải của tiến trình này không. AUMID có nhiều dạng: "Spotify.exe", "Chrome",
+// "com.riotgames.RiotGames.RiotClient", "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"...
+const AUMID_STOP: [&str; 8] = ["microsoft", "windows", "com", "app", "exe", "desktop", "client", "games"];
+fn app_matches(aumid: &str, proc_norm: &str) -> bool {
+    let p = proc_norm;
+    if p.len() < 3 { return false; }
+    let a = aumid.to_lowercase();
+    let mut cands: Vec<String> = player_names_only(aumid).into_iter().map(|s| norm_proc(&s)).collect();
+    for t in a.split(|c: char| matches!(c, '.' | '_' | '!' | '-' | ' ' | '\\' | '/')) {
+        // bỏ từ chung chung và mã gói kiểu "8wekyb3d8bbwe"
+        let hashy = t.len() >= 10 && t.chars().any(|c| c.is_ascii_digit());
+        if t.len() >= 4 && !hashy && !AUMID_STOP.contains(&t) { cands.push(t.to_string()); }
+    }
+    // Tên tiến trình khác hẳn AUMID
+    if a.contains("zunemusic") { cands.push("media.player".into()); cands.push("music.ui".into()); }
+    if a.contains("applemusic") { cands.push("applemusic".into()); }
+    if a.contains("coccoc") { cands.push("browser".into()); }
+    // Trùng hẳn: tên ngắn (vlc) cũng được. Chứa nhau: chỉ khi đủ dài để không nhầm
+    cands.iter().any(|c| c.len() >= 3 && (p == c || (c.len() >= 4 && p.contains(c.as_str())) || (p.len() >= 5 && c.contains(p))))
+}
+
+// Trình nghe nhạc thật: đang tạm dừng vẫn hiện (để bấm phát tiếp) dù từ lúc mở app chưa nghe thấy tiếng nào
+const MUSIC_APPS: [&str; 12] = ["spotify", "zunemusic", "applemusic", "itunes", "vlc", "foobar", "aimp", "musicbee", "tidal", "deezer", "amazonmusic", "winamp"];
+const HEARD_PLAYING: Duration = Duration::from_secs(8);   // đang phát: phải có tiếng trong 8 giây gần nhất
+const HEARD_PAUSED: Duration = Duration::from_secs(1800); // đang dừng: từng có tiếng trong 30 phút gần nhất
+// Phiên có đáng hiện không: since = bao lâu kể từ lần cuối ứng dụng có tiếng (None: chưa nghe thấy lần nào)
+fn session_ok(status: &str, since: Option<Duration>, music_app: bool) -> bool {
+    match status {
+        "Playing" => since.map_or(false, |d| d <= HEARD_PLAYING),
+        "Closed" => false,
+        _ => music_app || since.map_or(false, |d| d <= HEARD_PAUSED),
+    }
+}
+fn is_music_app(aumid: &str) -> bool {
+    let a = aumid.to_lowercase();
+    MUSIC_APPS.iter().any(|m| a.contains(m))
 }
 
 // Lớp của cửa sổ trên cùng tại điểm (x, y): "desk" nếu là màn hình nền/taskbar, "" nếu không có.
@@ -622,6 +721,7 @@ struct MediaState {
     tabs_key: String,
     good: Option<(Value, String, String, Instant)>, // (tin nhắn, ảnh bìa, tên thường, lúc ghi) của nguồn có tiếng gần nhất
     override_title: Option<String>, // đang hiện nguồn có tiếng thay cho nguồn Windows báo: tên tab cần mở khi bấm ảnh bìa
+    sel_aumid: Option<String>,      // AUMID của phiên đang hiện (pick_session), để lệnh điều khiển nhắm đúng phiên
 }
 fn hash_str(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -634,9 +734,42 @@ const STALE_TRIES: u32 = 8;
 // Đang chờ ảnh bìa của bài mới: hỏi nhanh (200 ms) trong ~25 lần đầu (~5 giây), sau đó về nhịp 1 giây
 const FAST_THUMB_TRIES: u32 = 25;
 
-fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
-    let Ok(s) = mgr.GetCurrentSession() else {
+// Chọn phiên nhạc để hiện. Windows chỉ cho biết một phiên "hiện tại" (thường là ứng dụng khai báo gần nhất, có thể
+// là Riot Client hay video tắt tiếng). Xét phiên hiện tại trước rồi các phiên khác:
+//   1. phiên đang phát mà ứng dụng của nó đang có tiếng;  2. phiên đang dừng của ứng dụng vừa có tiếng / trình nghe nhạc.
+// Không phiên nào đạt: coi như không có nhạc.
+fn pick_session(mgr: &Manager, aw: &AudioWatch) -> Option<Session> {
+    let cur = mgr.GetCurrentSession().ok();
+    if !aw.available() { return cur; }
+    let mut all: Vec<Session> = cur.into_iter().collect();
+    if let Ok(v) = mgr.GetSessions() {
+        for i in 0..v.Size().unwrap_or(0) {
+            if let Ok(s) = v.GetAt(i) { all.push(s); }
+        }
+    }
+    let now = Instant::now();
+    let info: Vec<(Session, String, bool)> = all.into_iter().filter_map(|s| {
+        let aumid = s.SourceAppUserModelId().ok()?.to_string();
+        let status = status_name(s.GetPlaybackInfo().ok()?.PlaybackStatus().ok()?.0);
+        let since = aw.last_heard(&aumid).map(|t| now.duration_since(t));
+        let ok = session_ok(status, since, is_music_app(&aumid));
+        Some((s, status.to_string(), ok))
+    }).collect();
+    info.iter().find(|(_, st, ok)| *ok && st == "Playing")
+        .or_else(|| info.iter().find(|(_, _, ok)| *ok))
+        .map(|(s, _, _)| s.clone())
+}
+// Phiên đang hiện trên viên thuốc (để nút điều khiển tác động đúng phiên, không phải phiên "hiện tại" của Windows)
+fn session_by_aumid(mgr: &Manager, aumid: &str) -> Option<Session> {
+    let v = mgr.GetSessions().ok()?;
+    (0..v.Size().unwrap_or(0)).filter_map(|i| v.GetAt(i).ok())
+        .find(|s| s.SourceAppUserModelId().map(|h| h.to_string() == aumid).unwrap_or(false))
+}
+
+fn poll_media(mgr: &Manager, ms: &mut MediaState, aw: &AudioWatch) -> windows::core::Result<()> {
+    let Some(s) = pick_session(mgr, aw) else {
         ms.last_key.clear();
+        ms.sel_aumid = None;
         emit(json!({ "type": "media", "active": false }));
         return Ok(());
     };
@@ -644,6 +777,7 @@ fn poll_media(mgr: &Manager, ms: &mut MediaState) -> windows::core::Result<()> {
     let pb = s.GetPlaybackInfo()?;
     let tl = s.GetTimelineProperties()?;
     let app = s.SourceAppUserModelId()?.to_string();
+    ms.sel_aumid = Some(app.clone());
     let title = props.Title()?.to_string();
     let artist = props.Artist()?.to_string();
     let album = props.AlbumTitle().map(|h| h.to_string()).unwrap_or_default();
@@ -822,13 +956,14 @@ fn parse_probe(s: &str) -> Vec<(i32, i32)> {
 }
 
 // ov: đang hiện nguồn có tiếng thay cho nguồn Windows báo (tab tắt tiếng giành chỗ): tên bài của nguồn có tiếng
-fn run_command(mgr: Option<&Manager>, cmd: &str, ov: Option<&str>) {
+fn run_command(mgr: Option<&Manager>, cmd: &str, ov: Option<&str>, sel: Option<&str>) {
     if cmd == "paste" {
         std::thread::sleep(Duration::from_millis(80));
         send_paste();
         return;
     }
-    let s: Option<Session> = mgr.and_then(|m| m.GetCurrentSession().ok());
+    // Phiên đang hiện trên viên thuốc; không tìm thấy thì phiên "hiện tại" của Windows như trước
+    let s: Option<Session> = mgr.and_then(|m| sel.and_then(|a| session_by_aumid(m, a)).or_else(|| m.GetCurrentSession().ok()));
     if cmd == "focus" {
         if let Some(s) = s {
             let aumid = s.SourceAppUserModelId().map(|h| h.to_string()).unwrap_or_default();
@@ -954,8 +1089,10 @@ fn main() {
 
     let mut ms = MediaState {
         last_key: String::new(), thumb_ok: false, thumb_tries: 0, cur_thumb: 0, prev_thumb: 0, thumb_str: String::new(),
-        emitted_key: String::new(), tabs: Vec::new(), tabs_at: None, tabs_key: String::new(), good: None, override_title: None,
+        emitted_key: String::new(), tabs: Vec::new(), tabs_at: None, tabs_key: String::new(), good: None, override_title: None, sel_aumid: None,
     };
+    let mut aw = AudioWatch::new();
+    let mut next_audio = Instant::now();
     let mut probe: Vec<(i32, i32)> = Vec::new();
     let mut last_cover: Option<bool> = None;
     let tab_tx = spawn_tab_worker();
@@ -978,7 +1115,7 @@ fn main() {
                     probe = parse_probe(rest);
                     last_cover = None;
                 } else if !cmd.is_empty() {
-                    run_command(mgr.as_ref(), &cmd, ms.override_title.as_deref());
+                    run_command(mgr.as_ref(), &cmd, ms.override_title.as_deref(), ms.sel_aumid.as_deref());
                     burst = 4; // phát lại trạng thái vài lần liên tiếp sau lệnh
                     next_media = Instant::now();
                 }
@@ -989,7 +1126,7 @@ fn main() {
                         probe = parse_probe(rest);
                         last_cover = None;
                     } else if !c.is_empty() {
-                        run_command(mgr.as_ref(), &c, ms.override_title.as_deref());
+                        run_command(mgr.as_ref(), &c, ms.override_title.as_deref(), ms.sel_aumid.as_deref());
                         burst = 4;
                     }
                 }
@@ -999,10 +1136,16 @@ fn main() {
         }
         let now = Instant::now();
 
+        // --- Ứng dụng nào đang có tiếng: đo mỗi ~200 ms (mức âm là tức thời, đo thưa dễ lỡ) ---
+        if now >= next_audio {
+            aw.sample();
+            next_audio = now + Duration::from_millis(200);
+        }
+
         // --- Trạng thái nhạc: mỗi ~1 giây, hoặc liên tục 200 ms sau khi có lệnh ---
         if now >= next_media {
             if let Some(m) = &mgr {
-                if let Err(e) = poll_media(m, &mut ms) {
+                if let Err(e) = poll_media(m, &mut ms, &aw) {
                     emit(json!({ "type": "error", "msg": format!("Nhac: {}", e.message()) }));
                 }
             }
@@ -1064,6 +1207,34 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aumid_to_process() {
+        assert!(app_matches("Spotify.exe", "spotify"));
+        assert!(app_matches("Chrome", "chrome"));
+        assert!(app_matches("MSEdge", "msedge"));
+        assert!(app_matches("308046B0AF4A39CB", "firefox"));
+        assert!(app_matches("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic", "microsoft.media.player"));
+        assert!(app_matches("com.riotgames.RiotGames.RiotClient", "riotclientservices"));
+        assert!(app_matches("vlc.exe", "vlc"), "tên ngắn: chỉ ghép khi trùng hẳn");
+        // Không nhận nhầm sang ứng dụng khác
+        assert!(!app_matches("com.riotgames.RiotGames.RiotClient", "chrome"));
+        assert!(!app_matches("Spotify.exe", "discord"));
+        assert!(!app_matches("Chrome", "msedge"));
+        assert!(!app_matches("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic", "explorer"));
+    }
+
+    #[test]
+    fn show_rules() {
+        let s = |n| Some(Duration::from_secs(n));
+        assert!(session_ok("Playing", s(1), false), "đang phát, có tiếng");
+        assert!(!session_ok("Playing", None, false), "Riot Client / video tắt tiếng: chưa từng có tiếng");
+        assert!(!session_ok("Playing", s(30), false), "đang phát nhưng im 30 giây");
+        assert!(session_ok("Paused", s(600), false), "vừa tạm dừng YouTube 10 phút trước");
+        assert!(!session_ok("Paused", None, false), "Riot Client tạm dừng");
+        assert!(session_ok("Paused", None, true), "Spotify tạm dừng từ trước khi mở app");
+        assert!(!session_ok("Closed", s(1), true));
+    }
 
     #[test]
     fn probe_points() {

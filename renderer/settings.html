@@ -12,11 +12,11 @@
 <div class="shell">
   <nav class="side" id="side">
     <button data-sec="general"><i data-ic="general"></i>Chung</button>
-    <button data-sec="hide"><i data-ic="hide"></i>Tự ẩn</button>
+    <button data-sec="hide"><i data-ic="island"></i>Viên thuốc</button>
     <button data-sec="weather"><i data-ic="weather"></i>Thời tiết</button>
     <button data-sec="notify"><i data-ic="notify"></i>Thông báo</button>
     <button data-sec="data"><i data-ic="data"></i>Bảng tạm &amp; Kệ tạm</button>
-    <button data-sec="about"><i data-ic="about"></i>Cập nhật &amp; thông tin<span class="dot" id="updDot"></span></button>
+    <button data-sec="about"><i data-ic="about"></i>Giới thiệu<span class="dot" id="updDot" title="Có bản cập nhật"></span></button>
   </nav>
 
   <main class="main" id="main">
@@ -35,42 +35,7 @@
         </label>
         <div class="row" id="displayRow">
           <div class="txt"><b>Màn hình hiển thị</b><span id="displayNote">Viên thuốc nằm ở mép trên màn hình này</span></div>
-          <select data-key="display" id="displaySel"></select>
-        </div>
-      </div>
-
-      <h2>Khi mở viên thuốc</h2>
-      <div class="card">
-        <div class="row">
-          <div class="txt"><b>Trang mặc định</b><span>Trang hiện ra khi mở viên thuốc</span></div>
-          <select data-key="defaultTab">
-            <option value="music">Nhạc</option>
-            <option value="weather">Thời tiết</option>
-            <option value="calendar">Lịch</option>
-            <option value="clip">Bảng tạm</option>
-            <option value="shelf">Kệ tạm</option>
-            <option value="sys">Hệ thống</option>
-          </select>
-        </div>
-        <div class="row">
-          <div class="txt"><b>Quay về trang mặc định</b><span>Sau khi rời viên thuốc một lúc; quay lại sớm hơn thì giữ trang đang xem</span></div>
-          <select data-key="tabReset" data-num>
-            <option value="60">Sau 1 phút</option>
-            <option value="300">Sau 5 phút</option>
-            <option value="900">Sau 15 phút</option>
-            <option value="0">Không bao giờ</option>
-          </select>
-        </div>
-        <div class="row col">
-          <div class="txt"><b>Tab hiện trên viên thuốc</b><span>Bỏ chọn tab không dùng cho thanh icon gọn hơn (giữ lại ít nhất 1 tab)</span></div>
-          <div class="tabs-pick" id="tabsPick">
-            <label><input type="checkbox" value="music" /><span>Nhạc</span></label>
-            <label><input type="checkbox" value="weather" /><span>Thời tiết</span></label>
-            <label><input type="checkbox" value="calendar" /><span>Lịch</span></label>
-            <label><input type="checkbox" value="clip" /><span>Bảng tạm</span></label>
-            <label><input type="checkbox" value="shelf" /><span>Kệ tạm</span></label>
-            <label><input type="checkbox" value="sys" /><span>Hệ thống</span></label>
-          </div>
+          <select data-key="display" id="displaySel" aria-label="Màn hình hiển thị"></select>
         </div>
       </div>
 
@@ -78,40 +43,86 @@
       <div class="card">
         <div class="row">
           <div class="txt"><b>Mở / đóng viên thuốc</b><span id="hotkeyNote">Mở bảng đầy đủ không cần rê chuột; Esc để đóng</span></div>
-          <select data-key="hotkey" id="hotkeySel">
+          <select data-key="hotkey" id="hotkeySel" aria-label="Phím tắt mở viên thuốc">
             <option value="Control+Alt+Space">Ctrl + Alt + Space</option>
             <option value="Control+Shift+Space">Ctrl + Shift + Space</option>
             <option value="Alt+Shift+N">Alt + Shift + N</option>
             <option value="">Tắt</option>
           </select>
         </div>
-        <div class="row"><div class="txt"><b>Thoát Notchy</b></div><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Q</kbd></div>
-        <div class="row"><div class="txt"><b>Mở Cài đặt</b><span>Chuột phải viên thuốc, hoặc bấm đúp icon ở khay hệ thống</span></div></div>
       </div>
+      <p class="note">Thoát nhanh: <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>Q</kbd>. Mở Cài đặt: bánh răng trên viên thuốc, chuột phải viên thuốc hoặc bấm đúp icon khay.</p>
     </section>
 
-    <!-- ===== Tự ẩn ===== -->
+    <!-- ===== Viên thuốc (mã mục giữ là "hide" cho các liên kết cũ) ===== -->
     <section class="sec" data-sec="hide">
-      <h1>Tự ẩn</h1>
-      <p class="lead">Khi ẩn, viên thuốc thu thành một vạch nhỏ ở mép trên. Đưa chuột lên sát mép trên, ngay giữa màn hình, giữ khoảng 0,3 giây để gọi ra.</p>
-      <div class="card choices" id="hideChoices">
-        <label class="choice"><input type="radio" name="hide" value="off" /><div class="txt"><b>Luôn hiện</b><span>Không bao giờ tự ẩn (trừ khi có ứng dụng toàn màn hình, xem bên dưới)</span></div></label>
-        <label class="choice"><input type="radio" name="hide" value="tabs" /><div class="txt"><b>Ẩn khi che tab trình duyệt</b><span>Hiện liên tục; chỉ ẩn khi đang đè lên một tab của Chrome, Edge, Brave, Cốc Cốc, Firefox hoặc Explorer</span></div></label>
-        <label class="choice"><input type="radio" name="hide" value="window" /><div class="txt"><b>Ẩn khi có cửa sổ bên dưới</b><span>Trên màn hình nền thì hiện; có ứng dụng nằm dưới viên thuốc và không dùng một lúc thì ẩn</span></div>
-          <select data-key="hideDelay" data-num id="delaySel">
-            <option value="0">Ngay lập tức</option>
-            <option value="5">Sau 5 giây</option>
-            <option value="10">Sau 10 giây</option>
-          </select>
-        </label>
+      <h1>Viên thuốc</h1>
+
+      <h2 class="first">Tab trên thanh icon</h2>
+      <div class="card tabs-card">
+        <!-- Bản thu nhỏ thanh tab của viên thuốc: bấm icon để ẩn / hiện tab; chấm xanh = trang mặc định -->
+        <div class="tabs-pick" id="tabsPick">
+          <div class="tp-grp">
+            <label title="Nhạc"><input type="checkbox" value="music" aria-label="Nhạc" /><span data-ic="t-music"></span></label>
+            <label title="Thời tiết"><input type="checkbox" value="weather" aria-label="Thời tiết" /><span data-ic="t-weather"></span></label>
+            <label title="Lịch"><input type="checkbox" value="calendar" aria-label="Lịch" /><span data-ic="t-calendar"></span></label>
+          </div>
+          <div class="tp-grp">
+            <label title="Bảng tạm"><input type="checkbox" value="clip" aria-label="Bảng tạm" /><span data-ic="t-clip"></span></label>
+            <label title="Kệ tạm"><input type="checkbox" value="shelf" aria-label="Kệ tạm" /><span data-ic="t-shelf"></span></label>
+            <label title="Hệ thống"><input type="checkbox" value="sys" aria-label="Hệ thống" /><span data-ic="t-sys"></span></label>
+          </div>
+        </div>
+        <p class="tp-hint" id="tabsHint">Bấm icon để ẩn / hiện tab · chấm xanh là trang mặc định</p>
+        <div class="tp-opts">
+          <label class="field"><span>Trang mặc định</span>
+            <select data-key="defaultTab">
+              <option value="music">Nhạc</option>
+              <option value="weather">Thời tiết</option>
+              <option value="calendar">Lịch</option>
+              <option value="clip">Bảng tạm</option>
+              <option value="shelf">Kệ tạm</option>
+              <option value="sys">Hệ thống</option>
+            </select>
+          </label>
+          <label class="field"><span>Quay về trang mặc định</span>
+            <select data-key="tabReset" data-num>
+              <option value="60">Sau 1 phút không dùng</option>
+              <option value="300">Sau 5 phút không dùng</option>
+              <option value="900">Sau 15 phút không dùng</option>
+              <option value="0">Không bao giờ</option>
+            </select>
+          </label>
+        </div>
       </div>
-      <div class="card">
+
+      <h2>Tự ẩn</h2>
+      <div class="modes" id="hideChoices" role="radiogroup" aria-label="Chế độ tự ẩn">
+        <label class="choice" data-mode="off"><input type="radio" name="hide" value="off" />
+          <span class="mini" aria-hidden="true"><i class="m-tabs"><b></b><b></b><b></b></i><i class="m-pill"></i></span>
+          <span class="txt"><b>Luôn hiện</b><span>Không tự ẩn, trừ khi có ứng dụng toàn màn hình</span></span></label>
+        <label class="choice" data-mode="tabs"><input type="radio" name="hide" value="tabs" />
+          <span class="mini" aria-hidden="true"><i class="m-tabs"><b class="hl"></b><b></b><b></b></i><i class="m-bar"></i></span>
+          <span class="txt"><b>Khi che tab trình duyệt</b><span>Chỉ thu thành vạch khi đè lên một tab (Chrome, Edge, Firefox, Explorer…)</span></span></label>
+        <label class="choice" data-mode="window"><input type="radio" name="hide" value="window" />
+          <span class="mini win" aria-hidden="true"><i class="m-tabs"><b></b><b></b><b></b></i><i class="m-bar"></i></span>
+          <span class="txt"><b>Khi có cửa sổ bên dưới</b><span>Có ứng dụng nằm dưới viên thuốc và không dùng một lúc</span></span></label>
+      </div>
+      <div class="inline-opt">
+        <span>Với chế độ thứ ba, ẩn</span>
+        <select data-key="hideDelay" data-num id="delaySel" aria-label="Thời gian chờ trước khi ẩn">
+          <option value="0">ngay lập tức</option>
+          <option value="5">sau 5 giây không dùng</option>
+          <option value="10">sau 10 giây không dùng</option>
+        </select>
+      </div>
+      <div class="card" style="margin-top:14px">
         <label class="row">
-          <div class="txt"><b>Thu thành vạch khi có ứng dụng toàn màn hình</b><span>Xem video toàn màn hình, trình chiếu, game cửa sổ không viền. Áp dụng ở mọi chế độ trên</span></div>
+          <div class="txt"><b>Thu thành vạch khi có ứng dụng toàn màn hình</b><span>Video, trình chiếu, game cửa sổ không viền. Áp dụng ở mọi chế độ trên</span></div>
           <input type="checkbox" class="sw" data-key="fullBar" />
         </label>
       </div>
-      <p class="note">Game Direct3D toàn màn hình độc quyền luôn ẩn hẳn. Nhắc ghi chú đổ chuông luôn hiện.</p>
+      <p class="note">Khi ẩn, viên thuốc thu thành vạch nhỏ ở mép trên; đưa chuột lên sát mép trên, ngay giữa màn hình, giữ khoảng 0,3 giây để gọi ra. Game Direct3D toàn màn hình độc quyền luôn ẩn hẳn; nhắc ghi chú luôn hiện.</p>
     </section>
 
     <!-- ===== Thời tiết ===== -->
@@ -188,7 +199,7 @@
 
     <!-- ===== Cập nhật & thông tin ===== -->
     <section class="sec" data-sec="about">
-      <h1>Cập nhật &amp; thông tin</h1>
+      <h1>Giới thiệu</h1>
       <div class="card hero">
         <img src="../build/icon.png" alt="" class="hero-ico" />
         <div class="txt"><b class="big">Notchy</b><span id="verLine"></span></div>
@@ -197,8 +208,11 @@
       <div class="card">
         <div class="row"><div class="txt"><b>Mã nguồn</b><span>github.com/iamna2000/notchy</span></div><button class="btn" data-act="repo">Mở GitHub</button></div>
         <div class="row"><div class="txt"><b>Gửi báo lỗi</b><span>Tạo tệp thông tin lỗi ra Desktop (không chứa bảng tạm, ghi chú) và mở trang báo lỗi trên GitHub để đính kèm</span></div><button class="btn" data-act="report">Tạo báo lỗi</button></div>
-        <div class="row"><div class="txt"><b>Khôi phục cài đặt mặc định</b><span>Giữ ghi chú, bảng tạm, kệ tạm và địa điểm thời tiết</span></div><button class="btn danger" data-act="reset">Khôi phục</button></div>
         <div class="row"><div class="txt"><b>Khởi động lại Notchy</b><span>Khi viên thuốc hoạt động không bình thường</span></div><button class="btn" data-act="restart">Khởi động lại</button></div>
+      </div>
+      <h2 class="danger-h">Vùng nguy hiểm</h2>
+      <div class="card danger-zone">
+        <div class="row"><div class="txt"><b>Khôi phục cài đặt mặc định</b><span>Giữ ghi chú, bảng tạm, kệ tạm và địa điểm thời tiết</span></div><button class="btn danger" data-act="reset">Khôi phục…</button></div>
         <div class="row"><div class="txt"><b>Thoát Notchy</b><span>Tắt hẳn đến lần bật máy sau (nếu đang tự khởi động)</span></div><button class="btn danger" data-act="quit">Thoát</button></div>
       </div>
     </section>

@@ -22,6 +22,7 @@ windows-core = "0.58" # macro #[interface] cho IPolicyConfig (di-sys)
 version = "0.58"
 features = [
   "Foundation",
+  "Foundation_Collections",
   "Media_Control",
   "Storage_Streams",
   "Win32_Foundation",

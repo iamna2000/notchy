@@ -195,18 +195,30 @@
       nextNotice(); // thông báo đến trong lúc đang dùng bảng: hiện bây giờ
     }, ms);
   }
+  // Chờ ý định: viên thuốc nằm ngay trên thanh tab trình duyệt nên chuột lướt qua nó liên tục. Chỉ phản ứng khi
+  // chuột ở yên trong vùng viên thuốc HOVER_INTENT ms; lướt qua (đi lên bấm tab) thì không bung bảng nữa.
+  // Đang mở / vừa rời chưa kịp thu (S.hover còn true) thì phản ứng ngay, để rê ra vào mép bảng không bị khựng.
+  const HOVER_INTENT = 150;
+  let hoverTimer = null;
+  function enterHover() {
+    clearTimeout(hoverTimer); hoverTimer = null;
+    if (S.hover) return;
+    const reset = (S.prefs.tabReset || 0) * 1000, home = S.prefs.defaultTab || 'music';
+    if (reset && leftAt && Date.now() - leftAt >= reset && S.tab !== home) setTab(home);
+    leftAt = 0;
+    // Rê vào đúng lúc đang báo "Đã thêm vào Kệ tạm": mở thẳng Kệ tạm để kéo ảnh đi luôn
+    if (S.notice && S.notice.kind === 'shot') { if (S.tab !== 'shelf') setTab('shelf'); S.open = true; }
+    S.hover = true; applyLayout(); requestSys();
+  }
   api.onHover((v) => {
     S.hoverRaw = v;
     clearTimeout(closeTimer);
+    clearTimeout(hoverTimer); hoverTimer = null;
     if (v) {
-      const reset = (S.prefs.tabReset || 0) * 1000, home = S.prefs.defaultTab || 'music';
-      if (reset && leftAt && Date.now() - leftAt >= reset && S.tab !== home) setTab(home);
-      leftAt = 0;
-      // Rê vào đúng lúc đang báo "Đã thêm vào Kệ tạm": mở thẳng Kệ tạm để kéo ảnh đi luôn
-      if (S.notice && S.notice.kind === 'shot') { if (S.tab !== 'shelf') setTab('shelf'); S.open = true; }
-      S.hover = true; applyLayout(); requestSys();
-    }
-    else collapseSoon(380);
+      if (S.hover) enterHover();
+      else hoverTimer = setTimeout(enterHover, HOVER_INTENT);
+    } else if (S.hover) collapseSoon(380);
+    else nextNotice(); // lướt qua, chưa mở gì: thông báo đang chờ (nếu có) hiện tiếp
   });
   api.onHidden((v) => { S.hidden = !!v; applyLayout(); });
   // Phím tắt mở viên thuốc: mở bảng đầy đủ dù chuột không ở đó; Esc / bấm lại phím tắt để đóng.
@@ -233,6 +245,7 @@
   /* ================= Tab ================= */
   const TB_ICON = { music: ICON.music, sys: ICON.gauge, weather: ICON.weather, clip: ICON.clip, shelf: ICON.shelf };
   $$('.tb').forEach((b) => { if (TB_ICON[b.dataset.tab]) b.innerHTML = TB_ICON[b.dataset.tab]; });
+  $('#tbSet').innerHTML = ICON.gear;
   // Thứ tự tab trên thanh icon: trang mới trượt vào từ phía tab được bấm, trang cũ trượt ra phía ngược lại
   const TAB_ORDER = ['music', 'weather', 'calendar', 'clip', 'shelf', 'sys'];
   function setTab(id) {
@@ -1132,7 +1145,8 @@
     dragDepth++;
     document.body.classList.add('dropping');
     if (S.tab !== 'shelf') setTab('shelf');
-    // Đang phát nhạc thì rê vào chỉ phóng to viên thuốc: mở hẳn bảng để thấy Kệ tạm mà thả vào
+    // Kéo tệp tới: ý định đã rõ, không chờ. Đang phát nhạc thì rê vào chỉ phóng to: mở hẳn bảng để thả vào Kệ tạm
+    if (S.hoverRaw && !S.hover) enterHover();
     if (!S.open) { S.open = true; applyLayout(); }
   });
   document.addEventListener('dragover', (ev) => { if (!hasFiles(ev)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
@@ -1207,7 +1221,11 @@
     navigator.getBattery().then((b) => {
       let lastCharging = b.charging, warned = 100;
       const pct = () => Math.round(b.level * 100);
+      // Chạy pin: bỏ blur ở các chuyển cảnh lớn (CSS .lite). Máy bàn không có pin luôn báo đang sạc -> không đổi gì.
+      const lite = () => document.documentElement.classList.toggle('lite', !b.charging);
+      lite();
       b.addEventListener('chargingchange', () => {
+        lite();
         if (b.charging && !lastCharging) { showNotice({ kind: 'charge', title: 'Đang sạc', sub: `Pin ${pct()}%` }); warned = 100; }
         lastCharging = b.charging;
       });
@@ -1373,7 +1391,8 @@
       case 'm-play': if (m.override) break; if (m.status === 'Playing') lastPlayingAt = Date.now(); m.pos = curPos(); m.base = Date.now(); m.status = m.status === 'Playing' ? 'Paused' : 'Playing'; m.cmdAt = Date.now(); api.media('play_pause'); musicSig = ''; renderMusic(); renderCompact(); break;
       case 'm-focus': api.media('focus'); break;
       case 'st-range': st.range = +el.dataset.r; store.set('strange', st.range); markRange(); drawStats(); break;
-      case 'c-open': if (S.hover) { S.open = true; applyLayout(); requestSys(); } break;
+      // Bấm ngay khi vừa chạm (chưa hết thời gian chờ ý định): bấm là ý định rõ ràng, mở luôn
+      case 'c-open': if (!S.hover && S.hoverRaw) enterHover(); if (S.hover) { S.open = true; applyLayout(); requestSys(); } break;
       case 'm-next': if (!m.override) api.media('next'); break;
       case 'm-prev': if (!m.override) api.media('prev'); break;
       case 'm-shuffle': if (m.override) break; m.shuffle = !m.shuffle; api.media('shuffle'); musicSig = ''; renderMusic(); break;
@@ -1388,6 +1407,7 @@
         break;
       case 'dev': api.sys('dev:' + el.dataset.id); S.sys.devices.forEach((d) => { d.def = d.id === el.dataset.id; }); renderOut(); break;
       case 'open-sound': api.openSound(); break;
+      case 'open-settings': api.openSettings(''); break;
       // Nước
       // Lịch
       case 'cal-prev': case 'cal-next': {
@@ -1429,7 +1449,7 @@
   }
 
   document.addEventListener('click', (ev) => {
-    const tab = ev.target.closest('.tb');
+    const tab = ev.target.closest('.tb[data-tab]');
     if (tab) { setTab(tab.dataset.tab); return; }
     if (ev.target.closest('#mBar')) return;
     // Nút con trong hàng ưu tiên hơn hàng cha
@@ -1485,18 +1505,46 @@
   document.addEventListener('contextmenu', (ev) => { ev.preventDefault(); api.menu(); });
 
   /* ----- Gõ chữ: cho cửa sổ nhận bàn phím tạm thời ----- */
-  let typingTimer = null;
-  document.addEventListener('focusin', (ev) => {
-    if (!ev.target.matches('input')) return;
+  // Cửa sổ viên thuốc tạo với focusable: false (không giành bàn phím của ứng dụng đang dùng). Khi đó bấm vào ô
+  // nhập thì ô có focus trong trang nhưng sự kiện focusin KHÔNG chạy (cửa sổ chưa có focus), nên trước đây không
+  // bao giờ xin được bàn phím: ô tìm kiếm Bảng tạm / ô ghi chú Lịch bấm vào không gõ được.
+  // Giờ: nhấn chuột vào ô nhập là xin bàn phím ngay (main bật focusable + focus), rồi focus lại đúng ô đó khi
+  // cửa sổ đã nhận focus. Không nhận được focus trong 1,5 giây (Windows chặn) thì trả lại như cũ.
+  let typingTimer = null, pendingInput = null, typingGuard = null;
+  function beginTyping() {
     clearTimeout(typingTimer);
     if (!S.typing) { S.typing = true; api.typing(true); applyLayout(); }
+  }
+  function endTyping() {
+    clearTimeout(typingGuard); pendingInput = null;
+    if (!S.typing) return;
+    S.typing = false; api.typing(false);
+    if (!S.hoverRaw) collapseSoon(300);
+  }
+  document.addEventListener('focusin', (ev) => { if (ev.target.matches('input')) beginTyping(); });
+  document.addEventListener('pointerdown', (ev) => {
+    const inp = ev.target.closest && ev.target.closest('input');
+    if (!inp || ev.button !== 0) return;
+    pendingInput = inp;
+    beginTyping();
+    if (document.hasFocus()) return;
+    clearTimeout(typingGuard);
+    typingGuard = setTimeout(() => { if (!document.hasFocus()) endTyping(); }, 1500);
+  }, true);
+  window.addEventListener('focus', () => {
+    clearTimeout(typingGuard);
+    const inp = pendingInput; pendingInput = null;
+    if (inp && inp.isConnected && document.activeElement !== inp) inp.focus();
+    else if (inp) beginTyping();
+    if (inp && inp.id === 'clipQ') markClipSel();
   });
+  // Bấm sang ứng dụng khác: cửa sổ mất focus, ô nhập có thể không nhận focusout -> tự kết thúc chế độ gõ
+  window.addEventListener('blur', () => { setTimeout(() => { if (!document.hasFocus() && S.typing) endTyping(); }, 120); });
   document.addEventListener('focusout', (ev) => {
     if (!ev.target.matches('input')) return;
     typingTimer = setTimeout(() => {
       if (document.activeElement && document.activeElement.matches('input')) return;
-      S.typing = false; api.typing(false);
-      if (!S.hoverRaw) collapseSoon(300);
+      endTyping();
     }, 120);
   });
   document.addEventListener('keydown', (ev) => {

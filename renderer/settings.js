@@ -19,6 +19,14 @@
     headphones: svg('<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="6" rx="1.6"/><rect x="16.5" y="14" width="4.5" height="6" rx="1.6"/>'),
     battery: svg('<rect x="2.5" y="7" width="17" height="10" rx="2.5"/><path d="M22 11v2"/><path d="M11.5 9l-2 3h3l-2 3"/>'),
     update: svg('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>'),
+    island: svg('<rect x="5" y="4" width="14" height="6" rx="3"/><path d="M3 20h18"/>'),
+    // Icon tab: cùng hình với thanh icon trên viên thuốc
+    't-music': '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 3.2 9.6 4.6a1 1 0 0 0-.8 1v9.1a3.2 3.2 0 1 0 2 3V8.6l4.7-1v5.1a3.2 3.2 0 1 0 2 3V4.2a1 1 0 0 0-1-1z"/></svg>',
+    't-weather': svg('<path d="M8.6 3.2v1.4M3.4 8.4H2M4.9 4.7l1 1M12.3 4.7l-1 1"/><path d="M5.7 11.2a3.2 3.2 0 1 1 6-2.1"/><path d="M8.8 20h8.1a3.3 3.3 0 0 0 .5-6.55 4.4 4.4 0 0 0-8.5-.95A3.75 3.75 0 0 0 8.8 20z"/>'),
+    't-calendar': svg('<rect x="3.8" y="5.2" width="16.4" height="15" rx="3.2"/><path d="M3.8 10.2h16.4M8.4 3.2v4M15.6 3.2v4"/>'),
+    't-clip': '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.2 3a2 2 0 0 0-1.9 1.4H6.8A2.8 2.8 0 0 0 4 7.2v11A2.8 2.8 0 0 0 6.8 21h10.4a2.8 2.8 0 0 0 2.8-2.8v-11a2.8 2.8 0 0 0-2.8-2.8h-.5A2 2 0 0 0 14.8 3zm0 1.6h5.6a.4.4 0 0 1 .4.4v.6a.4.4 0 0 1-.4.4H9.2a.4.4 0 0 1-.4-.4V5a.4.4 0 0 1 .4-.4z"/></svg>',
+    't-shelf': svg('<path d="M3.5 8.2a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'),
+    't-sys': svg('<path d="M4.6 17.5a8.6 8.6 0 1 1 14.8 0"/><path d="M12 13.2l3.6-4.4"/><circle cx="12" cy="13.6" r="1.4" fill="currentColor" stroke="none"/>'),
   };
   $$('[data-ic]').forEach((el) => { el.innerHTML = ICONS[el.dataset.ic] || ''; });
 
@@ -70,7 +78,14 @@
     });
     // Tab hiện trên viên thuốc
     const hid = st.tabsHidden || [];
-    $$('#tabsPick input').forEach((c) => { c.checked = !hid.includes(c.value); });
+    $$('#tabsPick input').forEach((c) => {
+      c.checked = !hid.includes(c.value);
+      c.closest('label').classList.toggle('home', c.value === st.defaultTab); // chấm xanh dưới trang mặc định
+    });
+    const hidNames = $$('#tabsPick input').filter((c) => !c.checked).map((c) => c.getAttribute('aria-label'));
+    $('#tabsHint').textContent = 'Bấm icon để ẩn / hiện tab · chấm xanh là trang mặc định' + (hidNames.length ? ` · đang ẩn: ${hidNames.join(', ')}` : '');
+    // Thời gian chờ chỉ dùng cho chế độ "Khi có cửa sổ bên dưới"
+    $('#delaySel').disabled = st.hideMode !== 'window';
     // Phím tắt
     const keyName = (k) => (k ? k.replace('Control', 'Ctrl').split('+').join(' + ') : '');
     $('#hotkeyNote').textContent = !st.hotkey ? 'Đang tắt'
