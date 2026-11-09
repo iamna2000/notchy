@@ -1,4 +1,4 @@
-# Notchy cho Windows (bản 3.2)
+# Notchy cho Windows (bản 1.0)
 
 ## Cách chạy
 1. Giải nén đè lên thư mục `dynamic-island` cũ (không phải tải lại Electron).

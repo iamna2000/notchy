@@ -18,8 +18,8 @@ if "%GH_TOKEN%"=="" (
 )
 
 echo Loai ban moi:
-echo   1 = sua loi        (vd 3.2.0 -^> 3.2.1)
-echo   2 = tinh nang moi  (vd 3.2.0 -^> 3.3.0)
+echo   1 = sua loi        (vd 1.0.0 -^> 1.0.1)
+echo   2 = tinh nang moi  (vd 1.0.0 -^> 1.1.0)
 choice /c 12 /n /m "Chon 1 hoac 2: "
 if errorlevel 2 (set BUMP=minor) else (set BUMP=patch)
 
