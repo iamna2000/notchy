@@ -96,6 +96,8 @@
   // Cửa sổ Cài đặt gửi sang: trang mặc định, thời gian rời viên thuốc thì quay về trang đó (giây, 0 = không), bật/tắt từng loại thông báo
   S.prefs = { defaultTab: 'music', tabReset: 60, notify: {}, tabsHidden: [], tempUnit: 'C', clipPaused: false };
   let prefsInit = false;
+  let curScale = 1;
+  const dpr = () => (window.devicePixelRatio || 1) * curScale;
   api.onPrefs((p) => {
     if (!p) return;
     const unitChanged = p.tempUnit !== S.prefs.tempUnit, pauseChanged = p.clipPaused !== S.prefs.clipPaused;
@@ -106,6 +108,16 @@
     if (prefsInit && hid.includes(S.tab)) setTab(S.prefs.defaultTab);
     if (unitChanged) { compactSig = ''; renderCompact(); renderWeather(); }
     if (pauseChanged) renderClip();
+    // Kích thước viên thuốc: phóng cả khối bằng CSS zoom (chữ, icon, khoảng cách cùng tỉ lệ; sự kiện chuột vẫn khớp).
+    // Cửa sổ do tiến trình chính nới theo cùng hệ số. Vẽ lại canvas cho nét ở độ phân giải mới.
+    const sc = Number(S.prefs.pillScale) || 1;
+    if (sc !== curScale) {
+      curScale = sc;
+      $('.stage').style.zoom = sc === 1 ? '' : String(sc);
+      if (wave.slots.c && wave.slots.c.cv) waveCanvas('c', wave.slots.c.cv);
+      if (wave.slots.m && wave.slots.m.cv) waveCanvas('m', wave.slots.m.cv);
+      if (typeof drawStats === 'function') drawStats();
+    }
     // Lần đầu (mở app): vào thẳng trang mặc định
     if (!prefsInit) { prefsInit = true; if (S.tab !== S.prefs.defaultTab && !S.hover) setTab(S.prefs.defaultTab); }
   });
@@ -756,7 +768,7 @@ Có gì mới: ${u.notes}` : '');
   function waveCanvas(key, cv) {
     const s = wave.slots[key] = { cv, g: null, hs: '' };
     if (!cv) return;
-    const r = window.devicePixelRatio || 1;
+    const r = dpr();
     cv.width = Math.ceil(WAVE_W * r); cv.height = Math.ceil(WAVE_H * r);
     s.g = cv.getContext('2d');
     s.g.setTransform(r, 0, 0, r, 0, 0);
@@ -766,7 +778,7 @@ Có gì mới: ${u.notes}` : '');
   function waveDraw(s, hs) {
     const g = s.g;
     if (!g || !s.cv.isConnected) return;
-    const r = window.devicePixelRatio || 1;
+    const r = dpr();
     hs = hs.map((h) => Math.round(h * r * 2) / (r * 2)); // làm tròn nửa điểm ảnh thật
     const key = hs.join(',');
     if (key === s.hs) return; // không có gì đổi: không vẽ lại

@@ -110,11 +110,26 @@ function targetDisplay() {
 }
 const displayName = (d, i) => `${d.label || `Màn hình ${i + 1}`} (${d.size.width}×${d.size.height})`;
 
+// Kích thước viên thuốc (Cài đặt > Viên thuốc): giao diện phóng bằng CSS zoom trên .stage (renderer/app.js),
+// cửa sổ và mọi vùng chuột ở đây nhân theo cùng hệ số. Không dùng webContents.setZoomFactor: mức zoom của
+// Chromium dùng chung theo nguồn file://, sẽ phóng luôn cả cửa sổ Cài đặt.
+let SCALE = 1;
+const loadScale = () => { SCALE = P.pillScale(loadSettings()); };
 function placeWindow() {
   if (!win) return;
   const { x, y, width } = targetDisplay().bounds;
-  win.setBounds({ x: Math.round(x + (width - WIN_W) / 2), y, width: WIN_W, height: WIN_H });
+  const w = Math.round(WIN_W * SCALE), h = Math.round(WIN_H * SCALE);
+  win.setBounds({ x: Math.round(x + (width - w) / 2), y, width: w, height: h });
   sendProbe();
+}
+function applyScale() {
+  const old = SCALE;
+  loadScale();
+  if (SCALE === old) return;
+  island = { w: island.w / old * SCALE, h: island.h / old * SCALE };
+  probeBox = { w: probeBox.w / old * SCALE, h: probeBox.h / old * SCALE };
+  placeWindow();
+  peekFor(2500); // hiện viên thuốc một lúc cho thấy kích thước mới
 }
 
 function createWindow() {
@@ -402,11 +417,12 @@ function start() {
     hide: () => ({ ...hide }), setHide, reloadHide: loadHideSettings,
     hotkey: hotkeyInfo, registerHotkey,
     isUserHidden: () => userHidden, setUserHidden,
-    placeWindow, targetDisplay, displayName,
+    placeWindow, targetDisplay, displayName, applyScale,
     debug: () => ({ covered, tabUnder, fullUnder, fsHidden }),
   });
   for (const m of [stats, weather, clip, shelf]) m.registerIpc();
   loadHideSettings();
+  loadScale();
   clip.start();
   createWindow();
   buildTray();
@@ -432,9 +448,11 @@ function start() {
 // ---------- Giao tiếp với viên thuốc (phần còn lại nằm trong các module lib/) ----------
 ipcMain.on('island-size', (_e, s) => {
   if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
-    island = { w: s.w, h: s.h };
+    // Giao diện báo kích thước theo đơn vị CSS (trước khi phóng): đổi ra điểm ảnh thật trên màn hình
+    const w = s.w * SCALE, h = s.h * SCALE;
+    island = { w, h };
     // Dạng thu gọn/hover (cao 20..60): cập nhật vùng dò cửa sổ che theo đúng bề rộng viên thuốc
-    if (s.h >= 20 && s.h <= 60 && (s.w !== probeBox.w || s.h !== probeBox.h)) { probeBox = { w: s.w, h: s.h }; sendProbe(); }
+    if (s.h >= 20 && s.h <= 60 && (w !== probeBox.w || h !== probeBox.h)) { probeBox = { w, h }; sendProbe(); }
   }
 });
 ipcMain.on('media-cmd', (_e, cmd) => {

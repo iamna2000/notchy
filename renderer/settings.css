@@ -165,6 +165,19 @@ kbd {
 .field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; }
 .field select { min-width: 0; width: 100%; }
 
+/* ===== Viên thuốc: kích thước (4 thẻ, hình viên thuốc to dần) ===== */
+.sizes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.sz { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 10px 12px; border-radius: 12px;
+  background: var(--panel); cursor: pointer; transition: background .2s var(--ease), box-shadow .2s; }
+.sz:hover { background: #232325; }
+.sz.sel { background: var(--sel); box-shadow: inset 0 0 0 1.5px var(--text); }
+.sz input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.sz input:focus-visible ~ .sz-mini { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sz-mini { width: 100%; height: 34px; border-radius: 7px; background: #3a3a3c; display: flex; justify-content: center; overflow: hidden; }
+.sz-mini i { display: block; background: #000; }
+.sz b { font-weight: 600; font-size: 13px; }
+@media (prefers-color-scheme: light) { .sz:hover { background: #f7f7fa; } }
+
 /* ===== Viên thuốc: 3 chế độ tự ẩn dạng thẻ có hình mép trên màn hình ===== */
 .modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .choice {

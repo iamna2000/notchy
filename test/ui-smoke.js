@@ -151,6 +151,12 @@ async function testPill() {
   const rang = await run("(window.__di.S.ring ? window.__di.S.ring.title + '|' + window.__di.S.ring.sub : 'none') + '|' + !document.getElementById('ringLink').hidden");
   rang === 'Họp nhóm|22:30 · còn 15 phút|true' ? ok('đổ chuông nhắc trước 15 phút, có nút mở liên kết') : fail('đổ chuông nhắc trước: ' + rang);
   await run("window.__di.stopRing(); window.__di.endNotice(); window.__di.S.notes = {};0");
+  // Kích thước viên thuốc: phóng cả khối bằng CSS zoom; về Vừa thì bỏ zoom
+  await cb('onPrefs', { pillScale: 1.3 });
+  const z13 = await run("document.querySelector('.stage').style.zoom");
+  await cb('onPrefs', { pillScale: 1 });
+  const z1 = await run("document.querySelector('.stage').style.zoom");
+  z13 === '1.3' && z1 === '' ? ok('kích thước viên thuốc (zoom 1.3, về Vừa)') : fail('kích thước viên thuốc: ' + z13 + ' / ' + z1);
   await cb('onKbOpen', true);
   const kb = await run('window.__di.S.open && window.__di.S.hover');
   kb ? ok('mở bằng phím tắt') : fail('phím tắt không mở viên thuốc');
@@ -181,10 +187,11 @@ async function testSettings() {
     const c = document.querySelector('#tabsPick input[value=sys]'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
     const r = document.querySelector('input[name=hide][value=tabs]'); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true }));
     const sel = document.querySelector('select[data-key=tempUnit]'); sel.value = 'F'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const sz = document.querySelector('#sizePick input[value="1.15"]'); sz.checked = true; sz.dispatchEvent(new Event('change', { bubbles: true }));
   })();0`);
   await wait(100);
   const calls = JSON.stringify(await run('window.__calls'));
-  for (const want of ['["set","tabsHidden",[]]', '["set","hideMode","tabs"]', '["set","tempUnit","F"]']) {
+  for (const want of ['["set","tabsHidden",[]]', '["set","hideMode","tabs"]', '["set","tempUnit","F"]', '["set","pillScale",1.15]']) {
     calls.includes(want) ? ok('gửi ' + want) : fail('thiếu lệnh ' + want + ' trong ' + calls);
   }
   errors.length ? errors.forEach((e) => fail('lỗi JS Cài đặt: ' + e)) : ok('không có lỗi JavaScript');

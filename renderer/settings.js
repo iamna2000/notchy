@@ -60,6 +60,7 @@
     $$('[data-key]').forEach((el) => {
       const v = st[el.dataset.key];
       if (el.type === 'checkbox') el.checked = !!v;
+      else if (el.type === 'radio') { el.checked = Number(el.value) === Number(v); el.closest('label').classList.toggle('sel', el.checked); }
       else if (el.tagName === 'SELECT' && el.id !== 'displaySel') el.value = String(v == null ? '' : v);
     });
     $$('[data-notify]').forEach((el) => { el.checked = !!(st.notify && st.notify[el.dataset.notify]); });

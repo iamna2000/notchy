@@ -84,3 +84,12 @@ test('khôi phục mặc định giữ dữ liệu, báo lỗi không lộ dữ 
   assert.equal(safe.weatherLoc, undefined);
   assert.equal(safe.weatherPlaces, 1, 'chỉ ghi số lượng địa điểm');
 });
+
+test('kích thước viên thuốc: chỉ nhận 4 mức, mặc định Vừa', () => {
+  assert.equal(P.pillScale({}), 1);
+  assert.equal(P.pillScale({ pillScale: 1.15 }), 1.15);
+  assert.equal(P.pillScale({ pillScale: '1.3' }), 1.3, 'chuỗi số từ ô chọn');
+  assert.equal(P.pillScale({ pillScale: 2 }), 1, 'giá trị lạ -> Vừa');
+  assert.equal(P.rendererPrefsFrom({ pillScale: 0.9 }).pillScale, 0.9);
+  assert.ok(P.PREF_KEYS.includes('pillScale'), 'khôi phục mặc định thì về Vừa');
+});
