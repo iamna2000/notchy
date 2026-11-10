@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   shelfOpen: (id) => ipcRenderer.send('shelf-open', String(id)),
   shelfDrag: (id) => ipcRenderer.send('shelf-drag', String(id)),
   notice: () => ipcRenderer.send('notice'),
+  inputStuck: () => ipcRenderer.send('input-stuck'),
   menu: () => ipcRenderer.send('menu'),
   openSound: () => ipcRenderer.send('open-sound'),
   onUpdate: (cb) => on('update', cb),

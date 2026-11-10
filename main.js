@@ -170,10 +170,34 @@ function createWindow() {
   // và vẫn vẽ animation; tự báo cho giao diện biết để dừng.
   win.on('show', () => send('winvis', true));
   win.on('hide', () => send('winvis', false));
-  // Cắm/rút màn hình: đặt lại vị trí và cập nhật danh sách màn hình trong Cài đặt
+}
+// Cắm/rút màn hình: đặt lại vị trí và cập nhật danh sách màn hình trong Cài đặt (đăng ký một lần ở start)
+function watchDisplays() {
   screen.on('display-metrics-changed', placeWindow);
   screen.on('display-added', () => { placeWindow(); refreshTrayMenu(); });
   screen.on('display-removed', () => { placeWindow(); refreshTrayMenu(); });
+}
+
+// ---------- Tự chữa: cửa sổ viên thuốc nuốt cú nhấn chuột ----------
+// Thỉnh thoảng cửa sổ rơi vào trạng thái: Windows gửi WM_MOUSEACTIVATE rồi bỏ mất cú nhấn (trang chỉ nhận cú
+// nhả), nên rê chuột vẫn phóng to (do pollCursor) nhưng bấm không mở được bảng. Đã đo trên app đang lỗi:
+// nạp lại trang, ẩn/hiện, cho focus, gửi bù WM_LBUTTONUP đều không gỡ được; TẠO LẠI CỬA SỔ thì hết ngay.
+// Giao diện phát hiện dấu hiệu (nhả chuột mà không có cú nhấn) và báo về đây; tạo lại khi viên thuốc rảnh.
+let needRecreate = false;
+function recreateWindow() {
+  const old = win;
+  if (!old || old.isDestroyed()) { createWindow(); return; }
+  old.removeAllListeners('closed'); // không để cửa sổ cũ xóa tham chiếu tới cửa sổ mới
+  hoverNow = false;
+  createWindow();
+  // Cửa sổ mới hiện (showInactive) khi vẽ xong, đè đúng chỗ cửa sổ cũ; đóng cửa sổ cũ sau đó để không bị nháy
+  win.once('ready-to-show', () => setTimeout(() => { try { old.destroy(); } catch (_) {} }, 300));
+}
+function maybeRecreate() {
+  if (!needRecreate || hoverNow || holding || typing || alerting || kbOpen || outDrag) return;
+  needRecreate = false;
+  log('pill: cửa sổ nuốt cú nhấn chuột, đã tạo lại cửa sổ');
+  recreateWindow();
 }
 
 function updateVisibility() {
@@ -298,6 +322,7 @@ function pollCursor() {
     win.setIgnoreMouseEvents(!inside, { forward: true });
     if (changed) send('hover', inside);
   }
+  maybeRecreate();
 }
 
 // ---------- Cầu nối nhạc (di-media, dự phòng media.ps1): nhạc, cửa sổ che, tab, toàn màn hình ----------
@@ -425,6 +450,7 @@ function start() {
   loadScale();
   clip.start();
   createWindow();
+  watchDisplays();
   buildTray();
   startMedia();
   updater.setup();
@@ -473,6 +499,7 @@ ipcMain.on('kb-close', () => setKbOpen(false));
 ipcMain.on('menu', () => { try { buildMenu().popup({ window: win }); } catch (e) { log('menu:', e.message); } });
 ipcMain.on('open-sound', () => { shell.openExternal('ms-settings:sound').catch(() => {}); });
 ipcMain.on('notice', () => { peekFor(4200); });
+ipcMain.on('input-stuck', () => { needRecreate = true; });
 ipcMain.on('install-update', () => updater.install());
 // Liên kết trong ghi chú: chỉ mở http(s) bằng trình duyệt mặc định
 ipcMain.on('open-url', (_e, u) => {

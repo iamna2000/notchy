@@ -157,6 +157,20 @@ async function testPill() {
   await cb('onPrefs', { pillScale: 1 });
   const z1 = await run("document.querySelector('.stage').style.zoom");
   z13 === '1.3' && z1 === '' ? ok('kích thước viên thuốc (zoom 1.3, về Vừa)') : fail('kích thước viên thuốc: ' + z13 + ' / ' + z1);
+  // Cửa sổ nuốt cú nhấn: nhả chuột mà không có cú nhấn (lần di chuột cuối không giữ nút) -> vẫn mở bảng, báo tạo lại cửa sổ.
+  // Cú bấm bình thường (có pointerdown) thì không báo.
+  const stuck = await run(`(async () => { const d = window.__di, el = document.querySelector('#compact .c-center') || document.getElementById('compact');
+    const fire = (t, o) => el.dispatchEvent(new PointerEvent(t, Object.assign({ bubbles: true, button: 0, pointerType: 'mouse' }, o)));
+    const n = () => window.__calls.filter((c) => c[0] === 'inputStuck').length;
+    d.S.hover = true; d.S.open = false; d.applyLayout();
+    const n0 = n(); fire('pointermove', { buttons: 0 }); fire('pointerdown', { buttons: 1 }); fire('pointerup', { buttons: 0 });
+    const normal = n() - n0;
+    d.S.open = false; d.applyLayout();
+    fire('pointermove', { buttons: 0 }); fire('pointerup', { buttons: 0 });
+    await new Promise((r) => setTimeout(r, 50));
+    return [normal, n() - n0, d.S.open].join('|'); })()`);
+  stuck === '0|1|true' ? ok('cửa sổ nuốt cú nhấn: vẫn mở bảng, báo tạo lại cửa sổ') : fail('nuốt cú nhấn: ' + stuck);
+  await run("window.__di.S.open = false; window.__di.S.hover = false; window.__di.applyLayout();0");
   await cb('onKbOpen', true);
   const kb = await run('window.__di.S.open && window.__di.S.hover');
   kb ? ok('mở bằng phím tắt') : fail('phím tắt không mở viên thuốc');

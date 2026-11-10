@@ -841,7 +841,7 @@ Có gì mới: ${u.notes}` : '');
   function spark(k, key, color, t0, span, max) {
     const cv = $(`#st-${k}-c`);
     if (!cv) return;
-    const r = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    const r = dpr(), W = cv.clientWidth, H = cv.clientHeight;
     if (!W || !H) return;
     if (cv.width !== Math.round(W * r)) { cv.width = Math.round(W * r); cv.height = Math.round(H * r); }
     const g = cv.getContext('2d');
@@ -1617,15 +1617,32 @@ Có gì mới: ${u.notes}` : '');
     }
   }
 
-  document.addEventListener('click', (ev) => {
-    const tab = ev.target.closest('.tb[data-tab]');
+  function routeClick(target) {
+    const tab = target.closest('.tb[data-tab]');
     if (tab) { setTab(tab.dataset.tab); return; }
-    if (ev.target.closest('#mBar')) return;
+    if (target.closest('#mBar')) return;
     // Nút con trong hàng ưu tiên hơn hàng cha
-    const inner = ev.target.closest('.acts button[data-act], .note button[data-act], .sh-item .rm[data-act]');
-    const el = inner || ev.target.closest('[data-act]');
+    const inner = target.closest('.acts button[data-act], .note button[data-act], .sh-item .rm[data-act]');
+    const el = inner || target.closest('[data-act]');
     if (el) act(el.dataset.act, el);
-  });
+  }
+  document.addEventListener('click', (ev) => routeClick(ev.target));
+
+  // Cửa sổ "nuốt cú nhấn" (xem recreateWindow trong main.js): trang chỉ nhận cú nhả, không có pointerdown nên không
+  // có click. Dấu hiệu: nhả chuột trái mà không có cú nhấn trước đó, trong khi lần di chuột cuối cùng KHÔNG giữ nút
+  // (nhấn ở ngoài rồi kéo vào thì lần di chuột cuối có giữ nút -> không tính). Khi gặp: tự làm việc của cú bấm
+  // (mở bảng, đổi tab, bấm nút, vào ô nhập) và báo tiến trình chính tạo lại cửa sổ lúc viên thuốc rảnh.
+  let downSeen = false, lastMoveButtons = 0;
+  document.addEventListener('pointerdown', () => { downSeen = true; }, true);
+  document.addEventListener('pointermove', (ev) => { lastMoveButtons = ev.buttons; }, true);
+  document.addEventListener('pointerup', (ev) => {
+    const lost = !downSeen && ev.button === 0 && lastMoveButtons === 0;
+    downSeen = false;
+    if (!lost || !ev.target.closest || !ev.target.closest('#island')) return;
+    api.inputStuck();
+    const field = ev.target.closest('input, textarea');
+    if (field) focusField(field); else routeClick(ev.target);
+  }, true);
 
   // Lăn chuột dọc để cuộn ngang: danh sách thiết bị phát, Kệ tạm
   document.addEventListener('wheel', (ev) => {
