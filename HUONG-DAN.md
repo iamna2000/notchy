@@ -11,7 +11,7 @@
 - **Không cần khay vẫn dùng được**: bấm **chuột phải ngay trên viên thuốc** để mở menu gọn (Cài đặt…, ẩn/hiện, Thoát).
 
 ## Cài đặt
-Chuột phải viên thuốc > **Cài đặt…** (hoặc bấm đúp icon khay, hoặc mở Notchy từ menu Start khi app đang chạy). Cửa sổ theo chế độ sáng / tối của Windows. Gồm:
+Chuột phải viên thuốc > **Cài đặt…** (hoặc bấm đúp icon khay, hoặc bánh răng trên viên thuốc). Cài đặt chỉ mở khi bạn chọn; mở Notchy từ menu Start khi app đang chạy chỉ hiện lại viên thuốc. Cửa sổ theo chế độ sáng / tối của Windows. Gồm:
 - **Chung**: khởi động cùng Windows, ẩn/hiện viên thuốc, chọn màn hình, **trang mặc định** khi mở viên thuốc và **sau bao lâu thì quay về** trang đó (1 / 5 / 15 phút hoặc không bao giờ), **chọn tab hiện** trên thanh icon, **phím tắt mở viên thuốc** (mặc định Ctrl+Alt+Space; máy đã có app khác dùng tổ hợp này thì tự chuyển sang Ctrl+Shift+Space hoặc Alt+Shift+N). Mở bằng phím tắt: bảng đầy đủ hiện ra kể cả khi đang tự ẩn; **Esc** hoặc nhấn lại để đóng, không rê chuột vào thì tự đóng sau 10 giây.
 - **Tự ẩn**: 3 chế độ: **Luôn hiện**, **Ẩn khi che tab trình duyệt**, **Ẩn khi có cửa sổ bên dưới** (ngay / sau 5 / 10 giây không dùng); bật/tắt thu thành vạch khi có ứng dụng toàn màn hình.
 - **Thời tiết**: đơn vị **°C / °F**; **nhiều địa điểm** (tối đa 8): vị trí hiện tại đoán theo mạng (tắt được) cộng các thành phố tự thêm bằng cách gõ tên; chọn **địa điểm chính** (hiện nhiệt độ trên viên thuốc), đổi thứ tự, xóa.

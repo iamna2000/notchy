@@ -94,12 +94,12 @@ test('kích thước viên thuốc: chỉ nhận 4 mức, mặc định Vừa', 
   assert.ok(P.PREF_KEYS.includes('pillScale'), 'khôi phục mặc định thì về Vừa');
 });
 
-test('khởi động cùng Windows: bản chạy lúc bật máy không mở Cài đặt', () => {
+test('mở app lần nữa khi đang chạy: không tự mở Cài đặt', () => {
   const app = 'C:\app';
-  assert.equal(P.secondInstanceSection(['electron.exe', app, P.AUTOSTART_ARG]), null);
-  assert.equal(P.secondInstanceSection(['electron.exe', app]), '', 'người dùng mở lại: trang đầu Cài đặt');
-  assert.equal(P.secondInstanceSection(['notchy.exe', '--settings=about']), 'about');
-  assert.equal(P.secondInstanceSection(undefined), '');
+  assert.deepEqual(P.secondInstance(['electron.exe', app, P.AUTOSTART_ARG]), { showPill: false, settings: null }, 'lúc bật máy: không làm gì');
+  assert.deepEqual(P.secondInstance(['electron.exe', app]), { showPill: true, settings: null }, 'mở lại bằng tay: chỉ hiện viên thuốc');
+  assert.deepEqual(P.secondInstance(['notchy.exe', '--settings=about']), { showPill: true, settings: 'about' }, 'yêu cầu rõ thì mở');
+  assert.deepEqual(P.secondInstance(undefined), { showPill: true, settings: null });
 });
 
 test('khởi động cùng Windows: mục khởi động trùng lệnh mang tên cũ là thừa', () => {

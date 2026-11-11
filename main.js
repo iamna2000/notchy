@@ -76,11 +76,10 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {
-    // Mở lại Notchy (menu Start...) khi đang chạy: hiện viên thuốc và mở Cài đặt. Bản chạy lúc bật máy thì bỏ qua.
-    const sec = P.secondInstanceSection(argv);
-    if (sec === null) return;
-    if (win) { setUserHidden(false); peek(); }
-    settingsWin.openSettings(sec);
+    // Mở lại Notchy khi đang chạy: chỉ hiện viên thuốc; Cài đặt chỉ mở khi được yêu cầu rõ (xem P.secondInstance)
+    const r = P.secondInstance(argv);
+    if (r.showPill && win) { setUserHidden(false); peek(); }
+    if (r.settings !== null) settingsWin.openSettings(r.settings);
   });
   app.setAppUserModelId('com.na.notchy');
   app.whenReady().then(start);
