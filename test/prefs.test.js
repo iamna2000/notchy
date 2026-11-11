@@ -93,3 +93,18 @@ test('kích thước viên thuốc: chỉ nhận 4 mức, mặc định Vừa', 
   assert.equal(P.rendererPrefsFrom({ pillScale: 0.9 }).pillScale, 0.9);
   assert.ok(P.PREF_KEYS.includes('pillScale'), 'khôi phục mặc định thì về Vừa');
 });
+
+test('khởi động cùng Windows: bản chạy lúc bật máy không mở Cài đặt', () => {
+  const app = 'C:\app';
+  assert.equal(P.secondInstanceSection(['electron.exe', app, P.AUTOSTART_ARG]), null);
+  assert.equal(P.secondInstanceSection(['electron.exe', app]), '', 'người dùng mở lại: trang đầu Cài đặt');
+  assert.equal(P.secondInstanceSection(['notchy.exe', '--settings=about']), 'about');
+  assert.equal(P.secondInstanceSection(undefined), '');
+});
+
+test('khởi động cùng Windows: mục khởi động trùng lệnh mang tên cũ là thừa', () => {
+  const items = [{ name: 'com.na.notchy' }, { name: 'DynamicIsland.Windows' }, { name: 'electron.app.Electron' }];
+  assert.deepEqual(P.staleLoginItems(items, 'com.na.notchy').map((x) => x.name), ['DynamicIsland.Windows', 'electron.app.Electron']);
+  assert.deepEqual(P.staleLoginItems([{ name: 'com.na.notchy' }], 'com.na.notchy'), []);
+  assert.deepEqual(P.staleLoginItems(undefined, 'com.na.notchy'), []);
+});

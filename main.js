@@ -76,10 +76,11 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {
-    // Mở lại Notchy (menu Start...) khi đang chạy: hiện viên thuốc và mở Cài đặt
+    // Mở lại Notchy (menu Start...) khi đang chạy: hiện viên thuốc và mở Cài đặt. Bản chạy lúc bật máy thì bỏ qua.
+    const sec = P.secondInstanceSection(argv);
+    if (sec === null) return;
     if (win) { setUserHidden(false); peek(); }
-    const sec = (argv || []).map(String).find((x) => x.startsWith('--settings='));
-    settingsWin.openSettings(sec ? sec.slice(11) : '');
+    settingsWin.openSettings(sec);
   });
   app.setAppUserModelId('com.na.notchy');
   app.whenReady().then(start);
@@ -464,7 +465,8 @@ function start() {
   globalShortcut.register('Control+Alt+Q', () => app.quit());
   registerHotkey();
   const s = loadSettings();
-  if (s.autostart === undefined) core.setAutostart(true);
+  // Đăng ký lại mỗi lần mở: cập nhật mục cũ chưa có --autostart và xóa mục khởi động thừa từ các bản trước
+  core.setAutostart(s.autostart === undefined ? true : !!s.autostart);
   // Tính năng AI thời tiết đã bỏ: xóa khóa API và tin đã lưu (nếu có) khỏi cài đặt
   if ('aiKeyEnc' in s || 'aiKey' in s || 'aiNews' in s) {
     const s2 = loadSettings(); delete s2.aiKeyEnc; delete s2.aiKey; delete s2.aiNews; saveSettings(s2);
