@@ -157,6 +157,11 @@ async function testPill() {
   await cb('onPrefs', { pillScale: 1 });
   const z1 = await run("document.querySelector('.stage').style.zoom");
   z13 === '1.3' && z1 === '' ? ok('kích thước viên thuốc (zoom 1.3, về Vừa)') : fail('kích thước viên thuốc: ' + z13 + ' / ' + z1);
+  // Chữ chạy tên bài: nhích theo nhịp main gửi (màn 200 Hz -> 66,7 lần/giây), không còn 32 lần/giây
+  await cb('onPrefs', { pillScale: 1, mqRate: 200 / 3 });
+  const mqRate = await run(`(() => { const m = document.querySelector('#compact .mq.run'); if (!m) return 'không chạy';
+    return (Number(m.style.getPropertyValue('--steps')) / parseFloat(m.style.getPropertyValue('--dur'))).toFixed(1); })()`);
+  Math.abs(Number(mqRate) - 66.7) < 0.5 ? ok('chữ chạy nhích 66,7 lần/giây trên màn 200 Hz') : fail('nhịp chữ chạy: ' + mqRate);
   // Cửa sổ nuốt cú nhấn: nhả chuột mà không có cú nhấn (lần di chuột cuối không giữ nút) -> vẫn mở bảng, báo tạo lại cửa sổ.
   // Cú bấm bình thường (có pointerdown) thì không báo.
   const stuck = await run(`(async () => { const d = window.__di, el = document.querySelector('#compact .c-center') || document.getElementById('compact');

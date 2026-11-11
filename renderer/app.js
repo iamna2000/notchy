@@ -94,8 +94,8 @@
   const wxHs = { full: 0, compact: 0 }; // đo sẵn cả hai chế độ để đổi qua lại không phải đo giữa lúc đang chuyển động
   let closeTimer = null, peekTimer = null;
   // Cửa sổ Cài đặt gửi sang: trang mặc định, thời gian rời viên thuốc thì quay về trang đó (giây, 0 = không), bật/tắt từng loại thông báo
-  S.prefs = { defaultTab: 'music', tabReset: 60, notify: {}, tabsHidden: [], tempUnit: 'C', clipPaused: false };
-  let prefsInit = false;
+  S.prefs = { defaultTab: 'music', tabReset: 60, notify: {}, tabsHidden: [], tempUnit: 'C', clipPaused: false, mqRate: 60 };
+  let prefsInit = false, mqRateWas = 60;
   let curScale = 1;
   const dpr = () => (window.devicePixelRatio || 1) * curScale;
   api.onPrefs((p) => {
@@ -108,6 +108,7 @@
     if (prefsInit && hid.includes(S.tab)) setTab(S.prefs.defaultTab);
     if (unitChanged) { compactSig = ''; renderCompact(); renderWeather(); }
     if (pauseChanged) renderClip();
+    if (mqRateWas !== S.prefs.mqRate) { mqRateWas = S.prefs.mqRate; mqFit($('#compact .c-mid')); $$('.m-title .mq, .m-artist .mq').forEach((m) => mqSteps(m)); }
     // Kích thước viên thuốc: phóng cả khối bằng CSS zoom (chữ, icon, khoảng cách cùng tỉ lệ; sự kiện chuột vẫn khớp).
     // Cửa sổ do tiến trình chính nới theo cùng hệ số. Vẽ lại canvas cho nét ở độ phân giải mới.
     const sc = Number(S.prefs.pillScale) || 1;
@@ -414,7 +415,7 @@ Có gì mới: ${u.notes}` : '');
       if (el.scrollWidth <= el.clientWidth + 1) return;
       const t = el.textContent, item = `<span class="mq-i">${esc(t)}</span>`;
       el.innerHTML = `<div class="mq run">${item}${item}</div>`;
-      el.firstElementChild.style.setProperty('--dur', Math.max(6, el.firstElementChild.firstElementChild.offsetWidth / 32).toFixed(1) + 's');
+      mqSteps(el.firstElementChild);
     });
     renderOut();
     updateProgress();
@@ -673,10 +674,16 @@ Có gì mới: ${u.notes}` : '');
     const textW = kids[kids.length - 1].getBoundingClientRect().right - kids[0].getBoundingClientRect().left;
     const pad = Math.max(MQ_GAP, MQ_MIN - textW);
     items.forEach((it) => { it.style.paddingRight = pad + 'px'; });
-    mq.style.setProperty('--dur', Math.max(6, (textW + pad) / MQ_SPEED).toFixed(1) + 's');
-    // Dịch đúng từng 1px (steps) thay vì tính lại mỗi lần màn hình quét: màn 200 Hz trước đây phải ghép cửa sổ
-    // 200 lần/giây chỉ để chữ nhích chưa tới 1px; giờ ~32 lần/giây, chữ vẫn trôi đều và sắc nét hơn.
-    mq.style.setProperty('--steps', Math.max(1, Math.round(textW + pad)));
+    mqSteps(mq, textW + pad);
+  }
+  // Thời lượng một vòng và số bước: nhích S.prefs.mqRate lần mỗi giây (xem mqStepRate trong lib/prefs.js).
+  // Bước dưới 1px vẫn sắc: đã chụp từng khung, chữ ở vị trí lẻ nửa điểm ảnh không nhòe hơn vị trí chẵn.
+  function mqSteps(mq, span) {
+    if (!mq) return;
+    if (span === undefined) span = mq.firstElementChild ? mq.firstElementChild.offsetWidth : 0;
+    const dur = Math.max(6, span / MQ_SPEED);
+    mq.style.setProperty('--dur', dur.toFixed(2) + 's');
+    mq.style.setProperty('--steps', Math.max(1, Math.round(dur * (S.prefs.mqRate || 60))));
   }
 
   /* ----- Sóng âm thật: phân tích phổ âm thanh hệ thống (loopback) thành 4 dải tần ----- */

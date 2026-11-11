@@ -121,6 +121,7 @@ function placeWindow() {
   const w = Math.round(WIN_W * SCALE), h = Math.round(WIN_H * SCALE);
   win.setBounds({ x: Math.round(x + (width - w) / 2), y, width: w, height: h });
   sendProbe();
+  settingsWin.sendPrefs(); // tần số quét của màn hình mới (nhịp chữ chạy)
 }
 function applyScale() {
   const old = SCALE;

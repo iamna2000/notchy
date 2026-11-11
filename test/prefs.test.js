@@ -108,3 +108,15 @@ test('khởi động cùng Windows: mục khởi động trùng lệnh mang tên
   assert.deepEqual(P.staleLoginItems([{ name: 'com.na.notchy' }], 'com.na.notchy'), []);
   assert.deepEqual(P.staleLoginItems(undefined, 'com.na.notchy'), []);
 });
+
+test('chữ chạy: nhích ít nhất 60 lần/giây, đều theo tần số quét', () => {
+  assert.ok(Math.abs(P.mqStepRate(200) - 200 / 3) < 1e-9, '200 Hz: mỗi bước giữ đúng 3 khung');
+  assert.equal(P.mqStepRate(144), 72);
+  assert.equal(P.mqStepRate(165), 82.5);
+  assert.equal(P.mqStepRate(120), 60);
+  assert.equal(P.mqStepRate(60), 60);
+  assert.equal(P.mqStepRate(59.94), 59.94);
+  assert.equal(P.mqStepRate(0), 60, 'không biết tần số');
+  assert.equal(P.mqStepRate(undefined), 60);
+  for (const hz of [60, 75, 90, 100, 120, 144, 165, 175, 200, 240, 360]) assert.ok(P.mqStepRate(hz) >= 60, hz + ' Hz');
+});
