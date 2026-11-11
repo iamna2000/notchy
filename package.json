@@ -26,6 +26,7 @@
     "appId": "com.na.notchy",
     "productName": "Notchy",
     "asar": false,
+    "electronLanguages": ["vi", "en-US"],
     "directories": {
       "output": "dist",
       "buildResources": "build"

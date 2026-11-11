@@ -48,6 +48,8 @@ for /f "usebackq delims=" %%v in (`node -p "require('./package.json').version"`)
 echo Phien ban moi: %VER%
 
 set ELECTRON_RUN_AS_NODE=
+rem Xoa ban build cu (moi ban ~80 MB va da co tren GitHub), chi giu ban sap dang
+if exist dist rmdir /s /q dist
 call npm run release
 if errorlevel 1 ( echo [LOI] Dang ban phat hanh that bai & pause & exit /b )
 
